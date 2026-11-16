@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">天气</string>
+    <string name="label_lunar">农历</string>
+    <string name="day_today">今天</string>
+    <string name="day_tomorrow">明天</string>
+    <string name="day_after_tomorrow">后天</string>
+    <string name="gate_label">大门</string>
+    <string name="gate_description">大门开关</string>
+    <string name="gate_placeholder">大门开关暂未接入</string>
+    <string name="settings_entry">设置</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_back">返回</string>
+    <string name="settings_intro">农历仍使用聚合数据（juhe.cn）接口，天气改用和风天气（QWeather）。请填写和风天气控制台的 API Host（形如 abc1234xyz.re.qweatherapi.com）与 API Key，可先点「手动调用接口」确认能调通，再保存并返回首页。</string>
+    <string name="calendar_key_label">万年历接口 Key（聚合数据）</string>
+    <string name="calendar_key_hint">用于 v.juhe.cn/calendar/day</string>
+    <string name="weather_key_label">天气 API Key（和风天气）</string>
+    <string name="weather_key_hint">控制台「项目管理」中的 API Key</string>
+    <string name="weather_host_label">天气 API Host（和风天气）</string>
+    <string name="weather_host_hint">控制台「设置」里的专属 Host</string>
+    <string name="city_label">城市</string>
+    <string name="city_hint">仅支持中国城市，例如 北京 或 116.41,39.92</string>
+    <string name="settings_locate">使用当前位置</string>
+    <string name="settings_locating">正在定位…</string>
+    <string name="settings_located">已定位到 %1$s</string>
+    <string name="settings_located_offline">已取到坐标 %1$s，但没能解析出城市名</string>
+    <string name="settings_locate_denied">没有定位权限，无法使用当前位置</string>
+    <string name="settings_location_info_gps">定位已启用：%1$s\n坐标 %2$s</string>
+    <string name="settings_location_info_no_fix">定位已开启，还没有定位结果；打开首页会自动定位。</string>
+    <string name="settings_location_info_city">当前按城市名查询，仅支持中国城市。</string>
+    <string name="settings_use_location">使用系统定位（推荐）</string>
+    <string name="settings_relocate">重新定位</string>
+    <string name="pull_refresh_hint">下拉刷新天气</string>
+    <string name="pull_refresh_release">松开立即刷新</string>
+    <string name="pull_refreshing">正在刷新…</string>
+    <string name="settings_save">保存并返回</string>
+    <string name="settings_clear_cache">清除缓存</string>
+    <string name="settings_test">手动调用接口</string>
+    <string name="settings_testing">调用中，请稍候...</string>
+    <string name="settings_test_need_key">请先填写至少一个接口 Key</string>
+    <string name="settings_test_result_label">接口返回内容</string>
+    <string name="settings_test_result_hint">点击「手动调用接口」后，这里会显示万年历、和风天气城市搜索、实时天气、逐小时和每日预报的原始返回内容。</string>
+    <string name="settings_saved">设置已保存</string>
+    <string name="cache_cleared">缓存已清除</string>
+    <string name="settings_tip">无网络时：农历会按前一天缓存推算当天；天气会显示缓存，缓存跨天后自动隐藏逐小时预报。和风天气每日预报最多 10 天。</string>
+</resources>

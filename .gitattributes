@@ -1,0 +1,9 @@
+# 统一换行符：源码入库用 LF，Windows 脚本用 CRLF
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件不做换行符转换
+*.jar binary
+*.png binary
+*.ttf binary

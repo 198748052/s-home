@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#F5F7FA</color>
+    <color name="card">#FFFFFF</color>
+    <color name="text_primary">#16202A</color>
+    <color name="text_secondary">#5A6B7B</color>
+    <color name="accent">#1565C0</color>
+    <color name="accent_light">#E3F0FC</color>
+    <color name="warm">#E65100</color>
+    <color name="cool">#0277BD</color>
+    <color name="divider">#E1E7EF</color>
+    <color name="icon_sunny">#F2A100</color>
+    <color name="icon_thunder">#F57C00</color>
+    <color name="icon_rain">#1E88E5</color>
+    <color name="icon_snow">#4FC3F7</color>
+    <color name="icon_cloud">#78909C</color>
+</resources>
