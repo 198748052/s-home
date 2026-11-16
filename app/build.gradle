@@ -10,7 +10,7 @@ android {
         applicationId 'com.local.tianqi'
         minSdk 24
         targetSdk 34
-        versionCode 7
+        versionCode 14
         versionName '1.4'
     }
 
