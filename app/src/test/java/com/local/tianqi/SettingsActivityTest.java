@@ -8,6 +8,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.os.Looper;
 import android.view.View;
 
 import org.junit.Before;
@@ -16,6 +17,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 
@@ -26,6 +28,7 @@ import android.widget.TextView;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.concurrent.Callable;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34, qualifiers = "w360dp-h640dp-xhdpi")
@@ -81,7 +84,7 @@ public class SettingsActivityTest {
         assertTrue("没改城市名应保留定位", new AppSettings(context).isLocationMode());
     }
 
-    /** 语音播报设置：Key 与音色要能存下来，试听按钮要能滚到。 */
+    /** 语音播报设置：Key、音色、语速都要能存下来，试听按钮要能滚到。 */
     @Test
     public void voiceSettingsAreSavedAndReachable() {
         Context context = RuntimeEnvironment.getApplication();
@@ -89,23 +92,86 @@ public class SettingsActivityTest {
 
         EditText key = activity.findViewById(R.id.etMimoKey);
         Spinner voice = activity.findViewById(R.id.spMimoVoice);
-        assertEquals(MimoTtsClient.VOICES.length, voice.getAdapter().getCount());
+        Spinner speed = activity.findViewById(R.id.spMimoSpeed);
+        assertEquals(ConfigDefaults.VOICES.length, voice.getAdapter().getCount());
+        assertEquals(ConfigDefaults.SPEEDS.length, speed.getAdapter().getCount());
+        assertEquals("默认语速应为正常", 1, speed.getSelectedItemPosition());
 
         key.setText(" mimo-test-key ");
         voice.setSelection(1);
+        speed.setSelection(2);
         activity.findViewById(R.id.btnSave).performClick();
 
         AppSettings saved = new AppSettings(context);
-        assertEquals("mimo-test-key", saved.getMimoKey());
-        assertEquals(MimoTtsClient.VOICES[1], saved.getMimoVoice());
+        assertEquals("mimo-test-key", saved.getTtsKey());
+        assertEquals(ConfigDefaults.VOICES[1], saved.getMimoVoice());
+        assertEquals(ConfigDefaults.SPEED_FAST, saved.getMimoSpeed());
 
-        // 重新进入设置页，音色应回显到刚才选中的那一项
+        // 重新进入设置页，音色与语速应回显到刚才选中的档位
         Activity again = Robolectric.buildActivity(SettingsActivity.class).setup().get();
         assertEquals("mimo-test-key",
                 ((EditText) again.findViewById(R.id.etMimoKey)).getText().toString());
         assertEquals(1, ((Spinner) again.findViewById(R.id.spMimoVoice)).getSelectedItemPosition());
+        assertEquals(2, ((Spinner) again.findViewById(R.id.spMimoSpeed)).getSelectedItemPosition());
 
         saveVoiceScreenshot(again);
+    }
+
+    /** 设置页点「立即同步配置」应该把云端值拉下来并显示来源。 */
+    @Test
+    public void syncConfigButtonAppliesCloudValues() throws Exception {
+        Context context = RuntimeEnvironment.getApplication();
+        StubHttpServer server = StubHttpServer.start(200, "{"
+                + "\"version\":5,"
+                + "\"weather\":{\"host\":\"cloud.re.qweatherapi.com\",\"key\":\"cloud-key\"},"
+                + "\"tts\":{\"key\":\"cloud-tts\"}"
+                + "}", "\"v5\"");
+        try {
+            Activity activity = Robolectric.buildActivity(SettingsActivity.class).setup().get();
+            EditText url = activity.findViewById(R.id.etConfigUrl);
+            url.setText(server.baseUrl() + "/api/config");
+            EditText token = activity.findViewById(R.id.etConfigToken);
+            token.setText("page-token");
+            activity.findViewById(R.id.btnConfigSync).performClick();
+
+            TextView info = activity.findViewById(R.id.tvConfigInfo);
+            waitUntil(new Callable<Boolean>() {
+                @Override
+                public Boolean call() {
+                    return info.getText().toString().contains("v5");
+                }
+            });
+
+            AppSettings settings = new AppSettings(context);
+            assertEquals("cloud-key", settings.getWeatherKey());
+            assertEquals("cloud.re.qweatherapi.com", settings.getWeatherHost());
+            assertEquals("cloud-tts", settings.getTtsKey());
+            // 令牌从设置页读，并真的带到请求头
+            assertEquals("page-token", settings.getKeysToken());
+            assertEquals("page-token", server.header("X-Config-Token"));
+            // 云端值应该直接写进本地输入框，用户看到的就是当前在用的
+            EditText weatherKey = activity.findViewById(R.id.etWeatherKey);
+            EditText weatherHost = activity.findViewById(R.id.etWeatherHost);
+            assertEquals("cloud-key", weatherKey.getText().toString());
+            assertEquals("cloud.re.qweatherapi.com", weatherHost.getText().toString());
+            // 音色列表写死在 App 里，云端只下发 Key
+            Spinner voice = activity.findViewById(R.id.spMimoVoice);
+            assertEquals(ConfigDefaults.VOICES.length, voice.getAdapter().getCount());
+        } finally {
+            server.close();
+        }
+    }
+
+    private static void waitUntil(Callable<Boolean> condition) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            if (condition.call()) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("等待同步回调超时");
     }
 
     /** 把设置页滚到语音播报区域再截图，确认这一块能正常显示。 */
@@ -117,7 +183,7 @@ public class SettingsActivityTest {
 
         View button = activity.findViewById(R.id.btnVoiceTest);
         ScrollView page = activity.findViewById(R.id.settingsScroll);
-        page.scrollTo(0, Math.max(0, button.getTop() - 260));
+        page.scrollTo(0, Math.max(0, button.getTop() - 460));
         layout(decor, widthPx, heightPx);
 
         assertTrue("试听按钮应可见", button.isShown());

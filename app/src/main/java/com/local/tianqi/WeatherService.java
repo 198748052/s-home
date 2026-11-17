@@ -147,8 +147,8 @@ public final class WeatherService {
                 if (location != null) {
                     // 实时天气：每次打开 app 都刷新
                     try {
-                        JSONObject root = fetch(QWeatherApi.weatherUrl(base, "current", location)
-                                + "?localTime=true&lang=zh", headers);
+                        JSONObject root = fetch(weatherUrl(base, ConfigDefaults.WEATHER_CURRENT_PATH,
+                                location, 0, 0), headers);
                         NowWeather value = parseNow(root, now);
                         writeNowCache(value);
                         nowOk = true;
@@ -158,8 +158,8 @@ public final class WeatherService {
                     // 每日与逐小时预报：距上次更新满一小时才请求
                     if (forecastDue) {
                         try {
-                            JSONObject root = fetch(QWeatherApi.weatherUrl(base, "hourly", location)
-                                    + "?hours=" + HOURLY_REQUEST + "&localTime=true&lang=zh", headers);
+                            JSONObject root = fetch(weatherUrl(base, ConfigDefaults.WEATHER_HOURLY_PATH,
+                                    location, HOURLY_REQUEST, 0), headers);
                             List<HourlyWeather> value = parseHourly(root);
                             if (!value.isEmpty()) {
                                 writeHourlyCache(value, now);
@@ -169,8 +169,8 @@ public final class WeatherService {
                         }
 
                         try {
-                            JSONObject root = fetch(QWeatherApi.weatherUrl(base, "daily", location)
-                                    + "?days=" + DAILY_COUNT + "&localTime=true&lang=zh", headers);
+                            JSONObject root = fetch(weatherUrl(base, ConfigDefaults.WEATHER_DAILY_PATH,
+                                    location, 0, DAILY_COUNT), headers);
                             List<WeatherDay> value = parseDaily(root);
                             if (!value.isEmpty()) {
                                 writeDailyCache(value, now);
@@ -442,16 +442,58 @@ public final class WeatherService {
         return node == null ? 0 : node.optDouble("value", 0);
     }
 
-    private static String dateKeyOf(String time) {
-        return time != null && time.length() >= 10 ? time.substring(0, 10) : "";
+    /** 按模板拼接口地址：{lat} {lon} {hours} {days}。 */
+    String weatherUrl(String base, String template, QWeatherApi.Location location,
+                      int hours, int days) {
+        String value = template == null ? "" : template.trim();
+        value = value.replace("{lat}", location.latitude)
+                .replace("{lon}", location.longitude)
+                .replace("{hours}", String.valueOf(hours))
+                .replace("{days}", String.valueOf(days));
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            return value;
+        }
+        return base + value;
     }
 
-    /** forecastTime 形如 2024-05-31T03:00+08:00（localTime=true）。 */
+    /** 取日期键 YYYY-MM-DD：ISO 字符串截前 10 位，纯数字时间戳先换算。 */
+    private static String dateKeyOf(String time) {
+        Calendar calendar = timeAsCalendar(time);
+        if (calendar != null) {
+            return dateKey(calendar);
+        }
+        String value = time == null ? "" : time.trim();
+        return value.length() >= 10 ? value.substring(0, 10) : "";
+    }
+
+    /** forecastTime 形如 2024-05-31T03:00+08:00（localTime=true），也兼容时间戳。 */
     private static int hourOf(String time) {
+        Calendar calendar = timeAsCalendar(time);
+        if (calendar != null) {
+            return calendar.get(Calendar.HOUR_OF_DAY);
+        }
         if (time == null || time.length() < 13) {
             return 0;
         }
         return parseInt(time.substring(11, 13));
+    }
+
+    /** 纯数字时间戳（10 位秒 / 13 位毫秒）转成 Calendar；不是时间戳返回 null。 */
+    private static Calendar timeAsCalendar(String time) {
+        String value = time == null ? "" : time.trim();
+        if (!value.matches("\\d{10}|\\d{13}")) {
+            return null;
+        }
+        long millis;
+        try {
+            millis = value.length() == 13
+                    ? Long.parseLong(value) : Long.parseLong(value) * 1000L;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTimeInMillis(millis);
+        return calendar;
     }
 
     /** 风向方位代码转中文，取值见 docs/qweather-docs/weather/08-wind-guide.md。 */

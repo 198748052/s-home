@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天气 App 云端 Key</title>
+<style>
+  :root { --bg:#f5f7fa; --card:#fff; --line:#e1e7ef; --text:#16202a; --dim:#5a6b7b;
+          --accent:#1565c0; --accent-soft:#e3f0fc; --warn:#e65100; --ok:#2e7d32; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  header { position:sticky; top:0; z-index:10; background:var(--card);
+           border-bottom:1px solid var(--line); padding:12px 20px;
+           display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  header h1 { font-size:19px; margin:0; }
+  header .meta { color:var(--dim); font-size:13px; }
+  header .spacer { flex:1; }
+  main { max-width:760px; margin:0 auto; padding:16px 20px 60px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px;
+            padding:16px 18px; margin-bottom:14px; }
+  section h2 { font-size:16px; margin:0 0 12px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
+  .grid .full { grid-column:1 / -1; }
+  label { display:block; font-size:13px; color:var(--dim); margin-bottom:4px; }
+  input[type=text], input[type=password], input[type=number] {
+    width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px;
+    background:#fff; color:var(--text); font:14px/1.5 inherit; }
+  input:focus { outline:2px solid var(--accent-soft); border-color:var(--accent); }
+  button { padding:9px 16px; border-radius:8px; border:1px solid transparent;
+           font:15px/1 inherit; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; }
+  button.soft { background:var(--accent-soft); color:var(--accent); }
+  button:disabled { opacity:.55; cursor:default; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .hint { color:var(--dim); font-size:12.5px; margin-top:6px; }
+  #status { font-size:13.5px; padding:9px 12px; border-radius:8px; display:none;
+            white-space:pre-wrap; word-break:break-word; }
+  #status.ok { display:block; background:#e8f5e9; color:var(--ok); }
+  #status.err { display:block; background:#fdecea; color:var(--warn); }
+  .mono { font-family:ui-monospace,Consolas,monospace; font-size:13px; word-break:break-all; }
+  .panel { max-width:420px; margin:8vh auto; }
+  .panel h2 { font-size:20px; margin:0 0 6px; }
+  .panel p { color:var(--dim); font-size:13.5px; margin:0 0 16px; }
+  .panel .grid { grid-template-columns:1fr; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>天气 App 云端 Key</h1>
+  <span class="meta" id="meta">读取中…</span>
+  <span class="spacer"></span>
+  <span id="actions" class="row hidden">
+    <button class="soft" id="reload">重新加载</button>
+    <button class="soft" id="test">测试语音 Key</button>
+    <button class="primary" id="save">保存 Key</button>
+    <button class="soft" id="logout">退出登录</button>
+  </span>
+</header>
+
+<main>
+  <div id="status"></div>
+
+  <!-- 首次设置 -->
+  <section class="panel hidden" id="panel-setup">
+    <h2>先设置管理员口令</h2>
+    <p>这是第一次打开，设置一个用户名和口令，之后用它登录本页。</p>
+    <div class="grid">
+      <div><label>用户名</label><input type="text" id="setupUser" value="admin"></div>
+      <div><label>口令（至少 6 位）</label><input type="password" id="setupPass"></div>
+      <div><label>再输一次</label><input type="password" id="setupPass2"></div>
+      <div><button class="primary" id="setupBtn">设置并进入</button></div>
+    </div>
+  </section>
+
+  <!-- 登录 -->
+  <section class="panel hidden" id="panel-login">
+    <h2>登录</h2>
+    <p>输入管理员用户名和口令。</p>
+    <div class="grid">
+      <div><label>用户名</label><input type="text" id="loginUser" value="admin"></div>
+      <div><label>口令</label><input type="password" id="loginPass"></div>
+      <div><button class="primary" id="loginBtn">登录</button></div>
+    </div>
+  </section>
+
+  <!-- 主体 -->
+  <div id="panel-main" class="hidden">
+    <section>
+      <h2>接口 Key</h2>
+      <div class="grid">
+        <div class="full">
+          <label>万年历 Key（聚合数据）</label>
+          <input type="text" id="calendarKey" class="mono" placeholder="f65d11f8…">
+        </div>
+        <div class="full">
+          <label>和风天气 API Host</label>
+          <input type="text" id="weatherHost" class="mono" placeholder="abc1234xyz.re.qweatherapi.com">
+        </div>
+        <div class="full">
+          <label>和风天气 API Key</label>
+          <input type="text" id="weatherKey" class="mono" placeholder="63e07d42…">
+        </div>
+        <div class="full">
+          <label>语音合成 Key（小米 MiMo）</label>
+          <input type="text" id="ttsKey" class="mono" placeholder="MiMo 控制台的 API Key">
+        </div>
+      </div>
+      <div class="hint">
+        接口地址与字段解析都写死在 App 里，服务端只下发这几个 Key。
+        保存后 App 下次启动（或设置页点「立即同步配置」）就会拿到。
+      </div>
+    </section>
+
+    <section>
+      <h2>服务设置</h2>
+      <div class="grid">
+        <div>
+          <label>监听端口</label>
+          <input type="number" id="port" min="1" max="65535">
+        </div>
+        <div>
+          <label>对外地址（用于显示 App 的 Key 接口）</label>
+          <input type="text" id="publicBaseUrl" placeholder="https://tq.example.com">
+        </div>
+        <div>
+          <label>管理员用户名</label>
+          <input type="text" id="adminUser">
+        </div>
+        <div>
+          <label>新口令（留空表示不改）</label>
+          <input type="password" id="newPass" placeholder="至少 6 位">
+        </div>
+        <div class="full">
+          <label>App 访问令牌（App 里的「访问令牌」填这个）</label>
+          <div class="row">
+            <input type="text" id="appToken" class="mono" readonly>
+            <button class="soft" id="rotateToken">轮换</button>
+          </div>
+        </div>
+        <div class="full">
+          <div class="row">
+            <button class="primary" id="saveSettings">保存服务设置</button>
+            <button class="soft" id="restart">重启服务</button>
+            <span class="hint" style="margin:0">改端口后服务会自动重启，请用新端口重新打开本页</span>
+          </div>
+        </div>
+      </div>
+      <div class="hint" id="urlHint"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let config = {};
+let state = {};
+
+function setStatus(message, kind) {
+  const box = $('status');
+  box.textContent = message || '';
+  box.className = kind || '';
+}
+
+function getPath(obj, path) {
+  return path.split('.').reduce((node, key) =>
+    (node && typeof node === 'object') ? node[key] : undefined, obj);
+}
+
+function setPath(obj, path, value) {
+  const keys = path.split('.');
+  let node = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (typeof node[keys[i]] !== 'object' || node[keys[i]] === null) {
+      node[keys[i]] = {};
+    }
+    node = node[keys[i]];
+  }
+  node[keys[keys.length - 1]] = value;
+}
+
+async function api(path, options) {
+  const resp = await fetch(path, Object.assign({ cache: 'no-store' }, options || {}));
+  let data = null;
+  try { data = await resp.json(); } catch (e) { data = null; }
+  if (!resp.ok) {
+    const message = (data && (data.error || data.message)) || ('HTTP ' + resp.status);
+    throw new Error(message);
+  }
+  return data;
+}
+
+const fields = [
+  ['calendarKey', 'calendar.key', 'string'],
+  ['weatherHost', 'weather.host', 'string'],
+  ['weatherKey', 'weather.key', 'string'],
+  ['ttsKey', 'tts.key', 'string'],
+];
+
+function fillForm() {
+  fields.forEach(([id, path]) => {
+    const el = $(id);
+    if (el) el.value = getPath(config, path) || '';
+  });
+}
+
+function bindForm() {
+  fields.forEach(([id, path]) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener('input', () => setPath(config, path, el.value));
+  });
+}
+
+function showPanel(name) {
+  ['panel-setup', 'panel-login', 'panel-main'].forEach((id) => {
+    $(id).classList.toggle('hidden', id !== name);
+  });
+  $('actions').classList.toggle('hidden', name !== 'panel-main');
+}
+
+async function loadState() {
+  state = await api('/api/admin/state');
+  $('meta').textContent = state.loggedIn
+    ? ('端口 ' + state.port + (state.publicBaseUrl ? ' · ' + state.publicBaseUrl : ''))
+    : '';
+  if (!state.setup) { showPanel('panel-setup'); return false; }
+  if (!state.loggedIn) { showPanel('panel-login'); return false; }
+  showPanel('panel-main');
+  $('port').value = state.port;
+  $('publicBaseUrl').value = state.publicBaseUrl || '';
+  $('adminUser').value = state.adminUser || 'admin';
+  $('appToken').value = state.appToken || '';
+  $('urlHint').textContent = state.publicBaseUrl
+    ? ('App 里的 Key 接口：' + state.publicBaseUrl.replace(/\/$/, '') + '/api/keys')
+    : '填上对外域名后，这里会显示 App 要用的 Key 接口地址';
+  return true;
+}
+
+async function loadConfig() {
+  config = await api('/api/admin/config?t=' + Date.now());
+  fillForm();
+  $('meta').textContent = 'Key 版本 v' + (config.version == null ? '-' : config.version) +
+    ' · 端口 ' + state.port + (config.updatedAt ? ' · ' + config.updatedAt : '');
+}
+
+async function enter() {
+  if (!(await loadState())) return;
+  await loadConfig();
+}
+
+async function doSetup() {
+  const pass = $('setupPass').value;
+  if (pass !== $('setupPass2').value) { setStatus('两次口令不一致', 'err'); return; }
+  try {
+    await api('/api/admin/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: $('setupUser').value, pass: pass }),
+    });
+    setStatus('口令已设置', 'ok');
+    await enter();
+  } catch (err) { setStatus('设置失败：' + err.message, 'err'); }
+}
+
+async function doLogin() {
+  try {
+    await api('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: $('loginUser').value, pass: $('loginPass').value }),
+    });
+    setStatus('');
+    await enter();
+  } catch (err) { setStatus('登录失败：' + err.message, 'err'); }
+}
+
+async function doLogout() {
+  try { await api('/api/admin/logout', { method: 'POST' }); } catch (e) { /* 忽略 */ }
+  location.reload();
+}
+
+function mask(value) {
+  const v = (value || '').trim();
+  if (!v) return '(空)';
+  return v.length <= 8 ? v : v.slice(0, 4) + '…' + v.slice(-4);
+}
+
+async function saveKeys() {
+  fields.forEach(([id, path]) => setPath(config, path, $(id).value.trim()));
+  $('save').disabled = true;
+  try {
+    const data = await api('/api/admin/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    const s = data.stored || {};
+    const lines = [
+      '已保存，Key 版本 v' + data.version + '（' + data.bytes + ' 字节）',
+      '服务端现在存的是：',
+      '  万年历 ' + (s.calendar || '-'),
+      '  天气 Host ' + (s.weatherHost || '-'),
+      '  天气 Key ' + (s.weatherKey || '-'),
+      '  语音 Key ' + (s.ttsKey || '-'),
+    ];
+    await loadConfig();
+    // 保存成功但刷新后读到的值和服务端存的不一致 → 多半是反代/浏览器缓存
+    if (s.ttsKey && s.ttsKey !== '(空)' && mask($('ttsKey').value) !== s.ttsKey) {
+      lines.push('');
+      lines.push('⚠ 刷新后读到的 Key 和服务端存的不一致：页面/反代在缓存旧内容。');
+      lines.push('  检查反代是否开了缓存（宝塔「反向代理」里的缓存开关），或在 nginx 里加 proxy_cache off;');
+      setStatus(lines.join('\n'), 'err');
+    } else {
+      lines.push('');
+      lines.push('App 下次启动或点「立即同步配置」即可拿到。');
+      setStatus(lines.join('\n'), 'ok');
+    }
+  } catch (err) {
+    setStatus('保存失败：' + err.message, 'err');
+  } finally {
+    $('save').disabled = false;
+  }
+}
+
+async function saveSettings() {
+  const port = parseInt($('port').value, 10);
+  const body = {
+    port: isNaN(port) ? null : port,
+    publicBaseUrl: $('publicBaseUrl').value,
+    adminUser: $('adminUser').value,
+    newPass: $('newPass').value,
+    rotateToken: $('rotateToken').dataset.armed === '1',
+  };
+  try {
+    const data = await api('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    $('newPass').value = '';
+    $('rotateToken').dataset.armed = '0';
+    $('rotateToken').textContent = '轮换';
+    if (data.appToken) $('appToken').value = data.appToken;
+    if (data.restart) {
+      setStatus('端口已改成 ' + data.port + '，服务正在重启。请用 http://服务器IP:' +
+        data.port + '/admin 重新打开（口令不变）。', 'ok');
+      return;
+    }
+    setStatus('服务设置已保存', 'ok');
+    await loadState();
+  } catch (err) { setStatus('保存失败：' + err.message, 'err'); }
+}
+
+async function restartService() {
+  if (!confirm('确定重启服务？')) return;
+  try {
+    await api('/api/admin/restart', { method: 'POST' });
+    setStatus('服务已重启，页面会自动刷新…', 'ok');
+    setTimeout(() => location.reload(), 2500);
+  } catch (err) { setStatus('重启失败：' + err.message, 'err'); }
+}
+
+async function testTts() {
+  $('test').disabled = true;
+  setStatus('正在用这个 Key 调一次语音合成…');
+  try {
+    const data = await api('/api/admin/test-tts', { method: 'POST' });
+    const lines = [
+      data.ok ? '✅ 语音 Key 可用' : '❌ 语音 Key 有问题',
+      'HTTP：' + data.status + '，响应 ' + data.bytes + ' 字节',
+    ];
+    if (data.audioBytes) lines.push('解析出的音频：' + data.audioBytes + ' 字节');
+    if (data.message) lines.push('详情：' + data.message);
+    setStatus(lines.join('\n'), data.ok ? 'ok' : 'err');
+  } catch (err) {
+    setStatus('测试失败：' + err.message, 'err');
+  } finally {
+    $('test').disabled = false;
+  }
+}
+
+$('setupBtn').addEventListener('click', doSetup);
+$('loginBtn').addEventListener('click', doLogin);
+$('loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+$('logout').addEventListener('click', doLogout);
+$('save').addEventListener('click', saveKeys);
+$('reload').addEventListener('click', enter);
+$('test').addEventListener('click', testTts);
+$('saveSettings').addEventListener('click', saveSettings);
+$('restart').addEventListener('click', restartService);
+$('rotateToken').addEventListener('click', () => {
+  const btn = $('rotateToken');
+  const armed = btn.dataset.armed === '1';
+  btn.dataset.armed = armed ? '0' : '1';
+  btn.textContent = armed ? '轮换' : '确认轮换?';
+});
+
+bindForm();
+enter().catch((err) => setStatus('加载失败：' + err.message, 'err'));
+</script>
+</body>
+</html>

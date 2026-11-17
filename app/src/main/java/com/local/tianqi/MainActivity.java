@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
     private LunarService lunarService;
     private WeatherService weatherService;
     private VoiceAnnouncer voice;
+    private AppSettings settings;
 
     private TextView tvSolarDate;
     private TextView tvWeekday;
@@ -46,6 +47,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        settings = new AppSettings(this);
         lunarService = new LunarService(this);
         weatherService = new WeatherService(this);
         voice = new VoiceAnnouncer(this);
@@ -96,6 +98,7 @@ public class MainActivity extends Activity {
 
         ensureLocationPermission();
         render();
+        syncConfig();
     }
 
     @Override
@@ -113,6 +116,23 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * 启动时同步云端配置：接口地址、Key、TTS 模型/音色/语速都从这里来，
+     * 云端换了配置就不用发版。只有内容真的变了才重新取数据，避免重复请求。
+     */
+    private void syncConfig() {
+        settings.keysStore().refresh(false, new KeysStore.Callback() {
+            @Override
+            public void onKeys(CloudKeys keys, boolean changed, String status) {
+                if (!changed || isFinishing() || isDestroyed()) {
+                    return;
+                }
+                render();
+                refreshData();
+            }
+        });
+    }
+
     /** 播报一段文案；没有数据时提示一下，不弹空语音。 */
     private void announce(String text) {
         if (text == null || text.isEmpty()) {
@@ -127,7 +147,7 @@ public class MainActivity extends Activity {
         if (locationRequested) {
             return;
         }
-        if (!new AppSettings(this).isLocationMode()) {
+        if (!settings.isLocationMode()) {
             return;
         }
         if (DeviceLocation.hasPermission(this)) {

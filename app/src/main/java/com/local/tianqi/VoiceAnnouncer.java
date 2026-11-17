@@ -57,8 +57,11 @@ public final class VoiceAnnouncer {
         final int token = generation.incrementAndGet();
         stopPlayback();
 
-        final String voice = MimoTtsClient.normalizeVoice(settings.getMimoVoice());
-        final File cached = cacheFile(voice, value);
+        final String voice = ConfigDefaults.normalizeVoice(settings.getMimoVoice());
+        final String speed = ConfigDefaults.normalizeSpeed(settings.getMimoSpeed());
+        final String style = settings.getStyleInstruction(speed);
+        // 缓存键把「模型 + 音色 + 语速 + 风格」都算进去，改任何一项都不会串音
+        final File cached = cacheFile(voice, speed, style, value);
         if (cached.isFile() && cached.length() > 0) {
             if (play(cached)) {
                 return;
@@ -67,7 +70,7 @@ public final class VoiceAnnouncer {
             cached.delete();
         }
 
-        final String key = settings.getMimoKey();
+        final String key = settings.getTtsKey();
         if (key.isEmpty()) {
             speakWithSystem(value, context.getString(R.string.voice_need_key));
             return;
@@ -80,7 +83,7 @@ public final class VoiceAnnouncer {
                 byte[] audio;
                 String failure = null;
                 try {
-                    audio = MimoTtsClient.synthesize(key, voice, value);
+                    audio = TtsClient.synthesize(key, voice, style, value);
                 } catch (Exception e) {
                     audio = null;
                     failure = message(e);
@@ -104,7 +107,11 @@ public final class VoiceAnnouncer {
                             return;
                         }
                         String reason = failureMessage == null ? "音频无法播放" : failureMessage;
-                        speakWithSystem(value, context.getString(R.string.voice_mimo_failed, reason));
+                        if (isAuthFailure(reason)) {
+                            // 401/403 说明 Key 本身被拒，直接告诉用户去哪儿改
+                            reason = context.getString(R.string.voice_key_invalid);
+                        }
+                        speakWithSystem(value, context.getString(R.string.voice_tts_failed, reason));
                     }
                 });
             }
@@ -231,6 +238,8 @@ public final class VoiceAnnouncer {
 
     private void speakNow(String text) {
         try {
+            // 语速档位对系统语音同样生效
+            systemTts.setSpeechRate(ConfigDefaults.systemRate(settings.getMimoSpeed()));
             systemTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tianqi-announce");
         } catch (RuntimeException e) {
             systemTtsUnavailable = true;
@@ -238,13 +247,15 @@ public final class VoiceAnnouncer {
         }
     }
 
-    /** 缓存文件名用「音色 + 文案」的 SHA-1，音色换了不会串音。 */
-    private File cacheFile(String voice, String text) {
+    /** 缓存文件名用「模型 + 音色 + 语速 + 风格指令 + 文案」的 SHA-1。 */
+    private File cacheFile(String voice, String speed, String style, String text) {
         File dir = new File(context.getCacheDir(), CACHE_DIR);
         if (!dir.isDirectory() && !dir.mkdirs()) {
             return new File(dir, "voice.wav");
         }
-        return new File(dir, sha1(voice + "|" + text) + ".wav");
+        String key = ConfigDefaults.TTS_MODEL + "|" + voice + "|" + speed + "|" + style
+                + "|" + text;
+        return new File(dir, sha1(key) + ".wav");
     }
 
     private static void writeFile(File target, byte[] bytes) {
@@ -289,6 +300,16 @@ public final class VoiceAnnouncer {
         } catch (Exception e) {
             return Integer.toHexString(value.hashCode());
         }
+    }
+
+    /** Key 被拒（401/403 或厂商返回 Invalid API Key）时给更明确的提示。 */
+    private static boolean isAuthFailure(String reason) {
+        if (reason == null) {
+            return false;
+        }
+        String lower = reason.toLowerCase(java.util.Locale.US);
+        return reason.contains("401") || reason.contains("403")
+                || lower.contains("invalid api key") || lower.contains("unauthorized");
     }
 
     private static String message(Exception e) {

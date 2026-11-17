@@ -5,3 +5,8 @@ local.properties
 .idea/
 .DS_Store
 *.apk
+
+# 服务端交叉编译产物，用 server/build.sh / build.ps1 现场生成，不入库
+server/tianqi-config-linux-*
+server/tianqi-config
+server/dist/

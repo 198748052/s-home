@@ -2,55 +2,108 @@ package com.local.tianqi;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.text.TextUtils;
 
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * 本地设置。接口地址和字段解析都写死在 {@link ConfigDefaults} / 各 Service 里，
+ * 云端只负责下发 Key，同步时直接写进这里的本地字段——所以「本地存的就是当前值」。
+ */
 public final class AppSettings {
 
     private static final String PREFS_NAME = "tianqi_prefs";
-    private static final String KEY_CALENDAR = "calendar_key";
-    private static final String KEY_WEATHER = "weather_key";
-    private static final String KEY_WEATHER_HOST = "weather_host";
+    static final String KEY_CALENDAR = "calendar_key";
+    static final String KEY_WEATHER = "weather_key";
+    static final String KEY_WEATHER_HOST = "weather_host";
+    static final String KEY_TTS = "tts_key";
+    private static final String KEY_TTS_VOICE = "tts_voice";
+    private static final String KEY_TTS_SPEED = "tts_speed";
     private static final String KEY_CITY = "city";
     private static final String DEFAULT_CITY = "北京";
-    /** 小米 MiMo 语音合成（TTS）的 API Key。 */
-    private static final String KEY_TTS = "tts_key";
-    /** 播报音色，取值见 MimoTtsClient.VOICES。 */
-    private static final String KEY_TTS_VOICE = "tts_voice";
 
-    /** 是否使用设备定位的坐标。开启后天气按坐标查，不再走城市名搜索。 */
+    /** 云端取 Key 的地址与令牌（留空则用编译进 App 的默认值）。 */
+    private static final String KEY_KEYS_URL = "keys_url";
+    private static final String KEY_KEYS_TOKEN = "keys_token";
+    /** 记录哪些本地值是由云端同步写入的（逗号分隔的 pref key）。 */
+    private static final String KEY_SYNCED = "synced_from_cloud";
+
+    /** 是否使用设备定位的坐标。 */
     private static final String KEY_USE_LOCATION = "use_location";
     private static final String KEY_LOCATION_LAT = "location_lat";
     private static final String KEY_LOCATION_LON = "location_lon";
-    /** 定位解析出的城市名，用于和输入框比对，判断用户是否改了城市。 */
     private static final String KEY_LOCATION_NAME = "location_name";
-    /** 定位位置的展示名，例如「开封市龙亭」。 */
     private static final String KEY_LOCATION_PLACE = "location_place";
-    /** 定位位置的国家或地区，例如「中国」。 */
     private static final String KEY_LOCATION_COUNTRY = "location_country";
 
+    private final Context context;
     private final SharedPreferences preferences;
+    private KeysStore keysStore;
 
     public AppSettings(Context context) {
-        preferences = context.getApplicationContext()
-                .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        this.context = context.getApplicationContext();
+        preferences = this.context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     public SharedPreferences preferences() {
         return preferences;
     }
 
-    /** 聚合数据（juhe.cn）万年历接口的 Key。 */
+    /** 云端 Key 拉取器（懒加载，避免互相构造时递归）。 */
+    public KeysStore keysStore() {
+        if (keysStore == null) {
+            keysStore = new KeysStore(context, this);
+        }
+        return keysStore;
+    }
+
+    // ---------- 接口 Key（云端同步写进来的就是这几个） ----------
+
     public String getCalendarKey() {
         return preferences.getString(KEY_CALENDAR, "").trim();
     }
 
-    /** 和风天气（QWeather）的 API Key 或 JWT。 */
     public String getWeatherKey() {
         return preferences.getString(KEY_WEATHER, "").trim();
     }
 
-    /** 和风天气控制台分配的专属 API Host，例如 abc1234xyz.re.qweatherapi.com。 */
     public String getWeatherHost() {
         return preferences.getString(KEY_WEATHER_HOST, "").trim();
+    }
+
+    public String getTtsKey() {
+        return preferences.getString(KEY_TTS, "").trim();
+    }
+
+    // ---------- 播报音色与语速（纯本地偏好） ----------
+
+    public String getMimoVoice() {
+        String value = preferences.getString(KEY_TTS_VOICE, "").trim();
+        return ConfigDefaults.normalizeVoice(value);
+    }
+
+    public void setMimoVoice(String voice) {
+        preferences.edit().putString(KEY_TTS_VOICE,
+                voice == null ? "" : voice.trim()).apply();
+        markLocalEdited(KEY_TTS_VOICE);
+    }
+
+    public String getMimoSpeed() {
+        String value = preferences.getString(KEY_TTS_SPEED, "").trim();
+        return ConfigDefaults.normalizeSpeed(value);
+    }
+
+    public void setMimoSpeed(String speed) {
+        preferences.edit().putString(KEY_TTS_SPEED,
+                speed == null ? "" : speed.trim()).apply();
+        markLocalEdited(KEY_TTS_SPEED);
+    }
+
+    /** 某档语速对应的播报风格指令（写死在 App 里）。 */
+    public String getStyleInstruction(String speed) {
+        return ConfigDefaults.style(speed);
     }
 
     public String getCity() {
@@ -58,27 +111,142 @@ public final class AppSettings {
         return city.isEmpty() ? DEFAULT_CITY : city;
     }
 
-    /** 小米 MiMo 语音合成的 API Key，留空则只用系统自带语音播报。 */
-    public String getMimoKey() {
-        return preferences.getString(KEY_TTS, "").trim();
+    // ---------- 云端 Key 地址与令牌 ----------
+
+    public String getKeysUrl() {
+        return preferences.getString(KEY_KEYS_URL, "").trim();
     }
 
-    public void setMimoKey(String key) {
-        preferences.edit().putString(KEY_TTS, key == null ? "" : key.trim()).apply();
+    public void setKeysUrl(String url) {
+        preferences.edit().putString(KEY_KEYS_URL, url == null ? "" : url.trim()).apply();
     }
 
-    /** 播报音色，默认冰糖。 */
-    public String getMimoVoice() {
-        String voice = preferences.getString(KEY_TTS_VOICE, "").trim();
-        return voice.isEmpty() ? MimoTtsClient.DEFAULT_VOICE : voice;
+    public String getKeysToken() {
+        String local = preferences.getString(KEY_KEYS_TOKEN, "").trim();
+        return local.isEmpty() ? ConfigDefaults.KEYS_TOKEN : local;
     }
 
-    public void setMimoVoice(String voice) {
-        preferences.edit().putString(KEY_TTS_VOICE,
-                MimoTtsClient.normalizeVoice(voice)).apply();
+    /** 本地粘的令牌（设置页回显用，空串表示跟随内置值）。 */
+    public String getLocalKeysToken() {
+        return preferences.getString(KEY_KEYS_TOKEN, "").trim();
     }
 
-    /** 是否使用设备定位。默认开启，失败时回退到上次定位坐标。 */
+    public void setKeysToken(String token) {
+        preferences.edit().putString(KEY_KEYS_TOKEN,
+                token == null ? "" : token.trim()).apply();
+    }
+
+    // ---------- 云端 Key 落地 ----------
+
+    /**
+     * 把云端下发的 Key 写进本地输入框对应的位置。
+     * 云端有值就覆盖；云端没值但上次是同步写进来的，就清掉；用户自己填的保留。
+     */
+    public void applyCloudKeys(CloudKeys keys) {
+        if (keys == null) {
+            return;
+        }
+        Set<String> synced = syncedKeys();
+        boolean dirty = false;
+        dirty |= writeFromCloud(KEY_CALENDAR, keys.calendarKey, synced);
+        dirty |= writeFromCloud(KEY_WEATHER_HOST, keys.weatherHost, synced);
+        dirty |= writeFromCloud(KEY_WEATHER, keys.weatherKey, synced);
+        dirty |= writeFromCloud(KEY_TTS, keys.ttsKey, synced);
+        if (dirty) {
+            preferences.edit().putString(KEY_SYNCED, TextUtils.join(",", synced)).apply();
+        }
+    }
+
+    private boolean writeFromCloud(String key, String cloud, Set<String> synced) {
+        String remote = cloud == null ? "" : cloud.trim();
+        boolean wasSynced = synced.contains(key);
+        if (!remote.isEmpty()) {
+            String local = preferences.getString(key, "").trim();
+            if (remote.equals(local)) {
+                synced.add(key);
+                return !wasSynced;
+            }
+            preferences.edit().putString(key, remote).apply();
+            synced.add(key);
+            return true;
+        }
+        if (wasSynced) {
+            preferences.edit().remove(key).apply();
+            synced.remove(key);
+            return true;
+        }
+        return false;
+    }
+
+    /** 清掉云端同步写入的 Key，用户自己填的保留。 */
+    public void clearCloudKeys() {
+        Set<String> synced = syncedKeys();
+        if (synced.isEmpty()) {
+            return;
+        }
+        SharedPreferences.Editor editor = preferences.edit();
+        for (String key : synced) {
+            editor.remove(key);
+        }
+        editor.remove(KEY_SYNCED);
+        editor.apply();
+    }
+
+    private Set<String> syncedKeys() {
+        String raw = preferences.getString(KEY_SYNCED, "");
+        Set<String> result = new LinkedHashSet<>();
+        if (raw == null || raw.trim().isEmpty()) {
+            return result;
+        }
+        for (String item : raw.split(",")) {
+            String key = item.trim();
+            if (!key.isEmpty()) {
+                result.add(key);
+            }
+        }
+        return result;
+    }
+
+    /** 这个值现在来自云端还是本地（设置页展示用）。 */
+    public boolean isFromCloud(String localKey) {
+        return syncedKeys().contains(localKey);
+    }
+
+    private void markLocalEdited(String key) {
+        Set<String> synced = syncedKeys();
+        if (synced.remove(key)) {
+            preferences.edit().putString(KEY_SYNCED, TextUtils.join(",", synced)).apply();
+        }
+    }
+
+    /** 设置页展示：每个 Key 现在是从云端同步来的，还是本地自己填的。 */
+    public String effectiveSummary() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("万年历 Key：").append(describe(KEY_CALENDAR)).append('\n');
+        builder.append("天气 Host：").append(describe(KEY_WEATHER_HOST)).append('\n');
+        builder.append("天气 Key：").append(describe(KEY_WEATHER)).append('\n');
+        builder.append("语音 Key：").append(describe(KEY_TTS));
+        return builder.toString();
+    }
+
+    private String describe(String localKey) {
+        String value = preferences.getString(localKey, "").trim();
+        if (value.isEmpty()) {
+            return "未配置";
+        }
+        return (isFromCloud(localKey) ? "云端 " : "本地 ") + mask(value);
+    }
+
+    /** Key 只露头尾，避免截图泄露。 */
+    private static String mask(String value) {
+        if (value.length() <= 8) {
+            return value;
+        }
+        return value.substring(0, 4) + "…" + value.substring(value.length() - 4);
+    }
+
+    // ---------- 定位 ----------
+
     public boolean isLocationMode() {
         return preferences.getBoolean(KEY_USE_LOCATION, true);
     }
@@ -87,7 +255,6 @@ public final class AppSettings {
         preferences.edit().putBoolean(KEY_USE_LOCATION, enabled).apply();
     }
 
-    /** 是否已经存过定位坐标（上次定位）。 */
     public boolean hasLocation() {
         return !getLocationLatitude().isEmpty() && !getLocationLongitude().isEmpty();
     }
@@ -124,7 +291,7 @@ public final class AppSettings {
                 .apply();
     }
 
-    /** 只更新坐标，保留已有的地名（定位成功但没反查到新地名时用）。 */
+    /** 只更新坐标，保留已有的地名。 */
     public void updateLocationCoordinates(String latitude, String longitude) {
         preferences.edit()
                 .putString(KEY_LOCATION_LAT, latitude)
@@ -144,6 +311,7 @@ public final class AppSettings {
                 .apply();
     }
 
+    /** 保存设置页里的 Key 与城市。 */
     public void save(String calendarKey, String weatherKey, String weatherHost, String city) {
         preferences.edit()
                 .putString(KEY_CALENDAR, calendarKey == null ? "" : calendarKey.trim())
@@ -151,5 +319,14 @@ public final class AppSettings {
                 .putString(KEY_WEATHER_HOST, weatherHost == null ? "" : weatherHost.trim())
                 .putString(KEY_CITY, city == null || city.trim().isEmpty() ? DEFAULT_CITY : city.trim())
                 .apply();
+        markLocalEdited(KEY_CALENDAR);
+        markLocalEdited(KEY_WEATHER);
+        markLocalEdited(KEY_WEATHER_HOST);
+    }
+
+    /** 保存语音合成 Key。 */
+    public void saveTtsKey(String key) {
+        preferences.edit().putString(KEY_TTS, key == null ? "" : key.trim()).apply();
+        markLocalEdited(KEY_TTS);
     }
 }

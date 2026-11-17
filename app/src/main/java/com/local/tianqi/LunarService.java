@@ -21,7 +21,6 @@ public final class LunarService {
 
     private static final long REFRESH_INTERVAL_MS = 2L * 60L * 60L * 1000L;
     private static final String CACHE_KEY = "lunar_cache";
-    private static final String ENDPOINT = "https://v.juhe.cn/calendar/day";
 
     private final AppSettings settings;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -127,7 +126,8 @@ public final class LunarService {
     }
 
     private LunarInfo fetch(Calendar calendar, String key) throws Exception {
-        String url = ENDPOINT
+        // 接口地址写死在 ConfigDefaults 里，云端只下发 Key
+        String url = ConfigDefaults.CALENDAR_URL
                 + "?date=" + HttpJson.encode(apiDate(calendar))
                 + "&key=" + HttpJson.encode(key);
         JSONObject root = HttpJson.get(url);

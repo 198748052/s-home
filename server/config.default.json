@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "version": 1,
+  "updatedAt": "",
+  "calendar": {
+    "key": ""
+  },
+  "weather": {
+    "host": "",
+    "key": ""
+  },
+  "tts": {
+    "key": ""
+  }
+}

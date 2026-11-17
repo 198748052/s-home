@@ -3,6 +3,7 @@ package com.local.tianqi;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -60,11 +61,67 @@ final class HttpJson {
     }
 
     /**
-     * POST 一段 JSON 并解析响应，用于小米 MiMo 的语音合成接口。
-     * 语音合成要等模型推理，读超时比 GET 宽松一些。
+     * 取一次原始响应：状态码、响应体、ETag。云端配置要靠 304 判断「没更新」，
+     * 所以这里不对非 2xx 抛异常，交给调用方决定怎么处理。
      */
-    static JSONObject postJson(String url, Map<String, String> headers, String body,
-                               int readTimeoutMs) throws IOException {
+    static Fetch fetch(String url, Map<String, String> headers) throws IOException {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setRequestProperty("Accept", "application/json");
+            if (headers != null) {
+                for (Map.Entry<String, String> header : headers.entrySet()) {
+                    if (header.getKey() != null && header.getValue() != null) {
+                        connection.setRequestProperty(header.getKey(), header.getValue());
+                    }
+                }
+            }
+
+            int status = connection.getResponseCode();
+            String etag = connection.getHeaderField("ETag");
+            if (status == HttpURLConnection.HTTP_NOT_MODIFIED) {
+                return new Fetch(status, "", etag);
+            }
+            InputStream stream = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            return new Fetch(status, readAll(stream), etag);
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    /** {@link #fetch} 的结果。 */
+    static final class Fetch {
+        final int status;
+        final String body;
+        final String etag;
+
+        Fetch(int status, String body, String etag) {
+            this.status = status;
+            this.body = body == null ? "" : body;
+            this.etag = etag == null ? "" : etag;
+        }
+
+        boolean isSuccess() {
+            return status >= 200 && status < 300;
+        }
+
+        boolean isNotModified() {
+            return status == 304;
+        }
+    }
+    /**
+     * POST 一段 JSON，拿回原始响应（字节 + Content-Type）。
+     * 语音合成有的厂商回 JSON（音频在 base64 字段里），有的直接回音频字节，
+     * 所以这里不假设响应类型。
+     */
+    static Raw postRaw(String url, Map<String, String> headers, String body, int readTimeoutMs)
+            throws IOException {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
@@ -72,7 +129,7 @@ final class HttpJson {
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(readTimeoutMs > 0 ? readTimeoutMs : READ_TIMEOUT_MS);
             connection.setDoOutput(true);
-            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Accept", "application/json, audio/*");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             if (headers != null) {
                 for (Map.Entry<String, String> header : headers.entrySet()) {
@@ -91,13 +148,7 @@ final class HttpJson {
             int status = connection.getResponseCode();
             InputStream stream = status >= 200 && status < 300
                     ? connection.getInputStream() : connection.getErrorStream();
-            String text = readAll(stream);
-            if (status < 200 || status >= 300) {
-                throw new IOException(errorMessage(status, text));
-            }
-            return new JSONObject(text);
-        } catch (org.json.JSONException e) {
-            throw new IOException("响应不是合法 JSON", e);
+            return new Raw(status, connection.getContentType(), readAllBytes(stream));
         } finally {
             if (connection != null) {
                 connection.disconnect();
@@ -105,38 +156,57 @@ final class HttpJson {
         }
     }
 
-    /**
-     * 错误响应优先取 {@code error.message}，例如 MiMo 返回
-     * {@code {"error":{"message":"Invalid API Key"}}}，这样提示比整段 JSON 好读。
-     */
-    private static String errorMessage(int status, String body) {
-        String detail = "";
+    /** {@link #postRaw} 的结果：状态码、Content-Type、原始字节。 */
+    static final class Raw {
+        final int status;
+        final String contentType;
+        final byte[] bytes;
+
+        Raw(int status, String contentType, byte[] bytes) {
+            this.status = status;
+            this.contentType = contentType == null ? "" : contentType;
+            this.bytes = bytes == null ? new byte[0] : bytes;
+        }
+
+        boolean isSuccess() {
+            return status >= 200 && status < 300;
+        }
+
+        String text() {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+    }
+
+    /** POST 一段 JSON 并解析响应（语音合成用，返回 JSON）。 */
+    static JSONObject postJson(String url, Map<String, String> headers, String body,
+                               int readTimeoutMs) throws IOException {
+        Raw response = postRaw(url, headers, body, readTimeoutMs);
+        if (!response.isSuccess()) {
+            throw new IOException("HTTP " + response.status + "：" + briefError(response));
+        }
         try {
-            JSONObject json = new JSONObject(body == null ? "" : body);
+            return new JSONObject(response.text());
+        } catch (org.json.JSONException e) {
+            throw new IOException("响应不是合法 JSON", e);
+        }
+    }
+
+    /** 错误响应优先取 error.message，其次截断原文。 */
+    private static String briefError(Raw response) {
+        String text = response.text();
+        try {
+            JSONObject json = new JSONObject(text);
             JSONObject error = json.optJSONObject("error");
-            if (error != null) {
-                detail = error.optString("message", "").trim();
-            }
-            if (detail.isEmpty()) {
-                detail = json.optString("message", "").trim();
+            if (error != null && !error.optString("message").isEmpty()) {
+                return error.optString("message");
             }
         } catch (org.json.JSONException ignored) {
         }
-        if (detail.isEmpty()) {
-            // 有些运行时对 401/403 不保留响应体，这里补一句能看懂的提示
-            if (status == 401 || status == 403) {
-                detail = "鉴权失败，请检查 API Key";
-            } else {
-                detail = brief(body);
-            }
+        if (response.status == 401 || response.status == 403) {
+            return "鉴权失败，请检查 Key";
         }
-        return "HTTP " + status + "：" + detail;
-    }
-
-    /** 错误响应可能很长（含 base64），截断后再拼进异常信息。 */
-    private static String brief(String body) {
-        String value = body == null ? "" : body.trim();
-        return value.length() > 300 ? value.substring(0, 300) + "…" : value;
+        String value = text.replace('\n', ' ').trim();
+        return value.length() > 200 ? value.substring(0, 200) + "…" : value;
     }
 
     static String encode(String value) {
@@ -160,5 +230,19 @@ final class HttpJson {
             }
         }
         return builder.toString();
+    }
+
+    /** 二进制安全地读完响应体：语音合成返回的是音频字节，不能按文本读。 */
+    private static byte[] readAllBytes(InputStream stream) throws IOException {
+        if (stream == null) {
+            return new byte[0];
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = stream.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+        }
+        return out.toByteArray();
     }
 }

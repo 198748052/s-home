@@ -11,62 +11,52 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 小米 MiMo 语音合成（MiMo-V2.5-TTS）客户端。
+ * 小米 MiMo 语音合成客户端（协议写死在这里）。
  * <p>
- * 接口与 OpenAI 兼容：POST {base}/chat/completions，模型 {@code mimo-v2.5-tts}。
- * 要念的文本必须放在 {@code role=assistant} 的消息里，{@code role=user} 只用来下风格指令；
- * 音频在响应里以 base64 返回：{@code choices[0].message.audio.data}。
- * 文档见 mimo-docs/audio/speech-synthesis-v2.5.md。
+ * POST {base}/chat/completions，模型 mimo-v2.5-tts：要念的文本放 {@code assistant} 消息，
+ * 风格指令（含语速）放 {@code user} 消息；音频在 {@code choices[0].message.audio.data} 里，
+ * 是 base64 的 wav。文档见 mimo-docs/audio/speech-synthesis-v2.5.md。
  */
-final class MimoTtsClient {
+final class TtsClient {
 
-    static final String BASE_URL = "https://api.xiaomimimo.com/v1";
-    static final String MODEL = "mimo-v2.5-tts";
-    static final String DEFAULT_VOICE = "冰糖";
-    /** 预置音色，见文档「预置音色列表」。 */
-    static final String[] VOICES = {"冰糖", "茉莉", "苏打", "白桦"};
-
-    /** 自然语言风格指令，放在 user 消息里；不会出现在合成的语音中。 */
-    private static final String STYLE = "请用清晰自然、语速适中的播报语气朗读，像天气预报播音员一样。";
     /** 语音合成要等模型推理，读超时给到 30 秒。 */
     private static final int READ_TIMEOUT_MS = 30000;
 
-    private MimoTtsClient() {
+    private TtsClient() {
     }
 
     /** 组装请求体：模型、风格指令、要朗读的文本、音频格式与音色。 */
-    static JSONObject buildRequest(String text, String voice) throws JSONException {
+    static JSONObject buildRequest(String text, String voice, String styleInstruction)
+            throws JSONException {
         JSONArray messages = new JSONArray();
-        messages.put(new JSONObject().put("role", "user").put("content", STYLE));
+        messages.put(new JSONObject().put("role", "user")
+                .put("content", styleInstruction == null ? "" : styleInstruction));
         messages.put(new JSONObject()
                 .put("role", "assistant")
                 .put("content", text == null ? "" : text));
         return new JSONObject()
-                .put("model", MODEL)
+                .put("model", ConfigDefaults.TTS_MODEL)
                 .put("messages", messages)
                 .put("audio", new JSONObject()
-                        .put("format", "wav")
-                        .put("voice", normalizeVoice(voice)));
+                        .put("format", ConfigDefaults.TTS_FORMAT)
+                        .put("voice", ConfigDefaults.normalizeVoice(voice)));
     }
 
-    static String normalizeVoice(String voice) {
-        String value = voice == null ? "" : voice.trim();
-        return value.isEmpty() ? DEFAULT_VOICE : value;
+    /** 拼接口地址：base + /chat/completions。 */
+    static String endpoint() {
+        String base = ConfigDefaults.TTS_BASE_URL;
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + ConfigDefaults.TTS_PATH;
     }
 
-    /**
-     * 合成一段语音，返回 wav 字节。非流式调用，一次拿完整音频，直接落盘交给播放器。
-     */
-    static byte[] synthesize(String key, String voice, String text) throws IOException {
-        return synthesize(key, voice, text, BASE_URL);
-    }
-
-    /** 同 {@link #synthesize(String, String, String)}，基地址可替换，方便本地假接口测试。 */
-    static byte[] synthesize(String key, String voice, String text, String baseUrl)
+    /** 合成一段语音，返回 wav 字节。 */
+    static byte[] synthesize(String key, String voice, String styleInstruction, String text)
             throws IOException {
         String token = key == null ? "" : key.trim();
         if (token.isEmpty()) {
-            throw new IOException("未填写 MiMo TTS Key");
+            throw new IOException("未填写语音合成 Key");
         }
         String content = text == null ? "" : text.trim();
         if (content.isEmpty()) {
@@ -77,12 +67,11 @@ final class MimoTtsClient {
         headers.put("Authorization", "Bearer " + token);
         JSONObject body;
         try {
-            body = buildRequest(content, voice);
+            body = buildRequest(content, voice, styleInstruction);
         } catch (JSONException e) {
             throw new IOException("请求内容不合法", e);
         }
-        JSONObject root = HttpJson.postJson(baseUrl + "/chat/completions", headers,
-                body.toString(), READ_TIMEOUT_MS);
+        JSONObject root = HttpJson.postJson(endpoint(), headers, body.toString(), READ_TIMEOUT_MS);
         return parseAudio(root);
     }
 
@@ -112,7 +101,7 @@ final class MimoTtsClient {
         } catch (IllegalArgumentException e) {
             throw new IOException("音频数据无法解码", e);
         }
-        if (bytes == null || bytes.length == 0) {
+        if (bytes.length == 0) {
             throw new IOException("语音合成返回的音频为空");
         }
         return bytes;
