@@ -7,11 +7,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,16 +34,20 @@ public class SettingsActivity extends Activity {
     private EditText etWeatherKey;
     private EditText etWeatherHost;
     private EditText etCity;
+    private EditText etMimoKey;
+    private Spinner spMimoVoice;
     private TextView tvCacheInfo;
     private TextView tvTestResult;
     private TextView tvLocationInfo;
     private Button btnTest;
     private Button btnLocate;
+    private Button btnVoiceTest;
     private CheckBox cbUseLocation;
     private ScrollView settingsScroll;
     private ScrollView testResultScroll;
     private ExecutorService executor;
     private Handler mainHandler;
+    private VoiceAnnouncer voice;
     private boolean testing;
     private boolean locating;
 
@@ -55,6 +61,8 @@ public class SettingsActivity extends Activity {
         etWeatherKey = findViewById(R.id.etWeatherKey);
         etWeatherHost = findViewById(R.id.etWeatherHost);
         etCity = findViewById(R.id.etCity);
+        etMimoKey = findViewById(R.id.etMimoKey);
+        spMimoVoice = findViewById(R.id.spMimoVoice);
         tvCacheInfo = findViewById(R.id.tvCacheInfo);
         tvTestResult = findViewById(R.id.tvTestResult);
         tvLocationInfo = findViewById(R.id.tvLocationInfo);
@@ -62,13 +70,17 @@ public class SettingsActivity extends Activity {
         testResultScroll = findViewById(R.id.testResultScroll);
         btnTest = findViewById(R.id.btnTest);
         btnLocate = findViewById(R.id.btnLocate);
+        btnVoiceTest = findViewById(R.id.btnVoiceTest);
         cbUseLocation = findViewById(R.id.cbUseLocation);
         executor = Executors.newSingleThreadExecutor();
         mainHandler = new Handler(Looper.getMainLooper());
+        voice = new VoiceAnnouncer(this);
 
         etCalendarKey.setText(settings.getCalendarKey());
         etWeatherKey.setText(settings.getWeatherKey());
         etWeatherHost.setText(settings.getWeatherHost());
+        etMimoKey.setText(settings.getMimoKey());
+        setUpVoiceSpinner(settings.getMimoVoice());
         // 定位启用时输入框显示定位到的城市名，改掉它就会退回按城市名查询
         etCity.setText(settings.isLocationMode() && settings.hasLocation()
                 ? settings.getLocationName() : settings.getCity());
@@ -106,6 +118,8 @@ public class SettingsActivity extends Activity {
                         etWeatherKey.getText().toString(),
                         etWeatherHost.getText().toString(),
                         city);
+                settings.setMimoKey(etMimoKey.getText().toString());
+                settings.setMimoVoice(selectedVoice());
                 Toast.makeText(SettingsActivity.this, R.string.settings_saved,
                         Toast.LENGTH_SHORT).show();
                 finish();
@@ -136,6 +150,42 @@ public class SettingsActivity extends Activity {
                 startLocate();
             }
         });
+
+        // 试听：先按输入框里的 Key 和音色存一次，再播一句示例文案
+        btnVoiceTest.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String key = etMimoKey.getText().toString().trim();
+                if (key.isEmpty()) {
+                    Toast.makeText(SettingsActivity.this, R.string.tts_test_need_key,
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                settings.setMimoKey(key);
+                settings.setMimoVoice(selectedVoice());
+                voice.announce(getString(R.string.voice_sample));
+            }
+        });
+    }
+
+    private void setUpVoiceSpinner(String current) {
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, MimoTtsClient.VOICES);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spMimoVoice.setAdapter(adapter);
+        String voice = MimoTtsClient.normalizeVoice(current);
+        for (int i = 0; i < MimoTtsClient.VOICES.length; i++) {
+            if (MimoTtsClient.VOICES[i].equals(voice)) {
+                spMimoVoice.setSelection(i);
+                return;
+            }
+        }
+    }
+
+    /** 下拉框里选中的音色。 */
+    private String selectedVoice() {
+        Object item = spMimoVoice == null ? null : spMimoVoice.getSelectedItem();
+        return item == null ? MimoTtsClient.DEFAULT_VOICE : item.toString();
     }
 
     @Override
@@ -279,6 +329,9 @@ public class SettingsActivity extends Activity {
         if (executor != null) {
             executor.shutdownNow();
         }
+        if (voice != null) {
+            voice.release();
+        }
     }
 
     private void refreshCacheInfo() {
@@ -295,7 +348,9 @@ public class SettingsActivity extends Activity {
         final String weatherKey = etWeatherKey.getText().toString().trim();
         final String weatherHost = etWeatherHost.getText().toString().trim();
         final String city = etCity.getText().toString().trim();
-        if (calendarKey.isEmpty() && weatherKey.isEmpty()) {
+        final String mimoKey = etMimoKey.getText().toString().trim();
+        final String mimoVoice = selectedVoice();
+        if (calendarKey.isEmpty() && weatherKey.isEmpty() && mimoKey.isEmpty()) {
             tvTestResult.setText(R.string.settings_test_need_key);
             testResultScroll.scrollTo(0, 0);
             scrollToResult();
@@ -312,7 +367,8 @@ public class SettingsActivity extends Activity {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                final String result = buildTestResult(calendarKey, weatherKey, weatherHost, city);
+                final String result = buildTestResult(calendarKey, weatherKey, weatherHost, city,
+                        mimoKey, mimoVoice);
                 mainHandler.post(new Runnable() {
                     @Override
                     public void run() {
@@ -344,7 +400,8 @@ public class SettingsActivity extends Activity {
     }
 
     private String buildTestResult(String calendarKey, String weatherKey,
-                                   String weatherHost, String city) {
+                                   String weatherHost, String city,
+                                   String mimoKey, String mimoVoice) {
         String location = city.isEmpty() ? "北京" : city;
         StringBuilder out = new StringBuilder();
         out.append("调用时间：").append(dateTime()).append("\n");
@@ -354,7 +411,28 @@ public class SettingsActivity extends Activity {
         appendJuheSection(out, "万年历接口（聚合数据，未改动）", "https://v.juhe.cn/calendar/day",
                 "date=" + HttpJson.encode(apiDate(today)), calendarKey);
         appendWeatherSections(out, weatherHost, weatherKey, location);
+        appendTtsSection(out, mimoKey, mimoVoice);
         return out.toString();
+    }
+
+    /** 小米 MiMo 语音合成自检：只报状态和音频大小，不把 base64 塞进结果框。 */
+    private void appendTtsSection(StringBuilder out, String mimoKey, String mimoVoice) {
+        out.append("===== 小米 MiMo 语音合成（TTS）=====\n");
+        if (mimoKey == null || mimoKey.isEmpty()) {
+            out.append("未填写 MiMo Key，已跳过\n\n");
+            return;
+        }
+        String sample = getString(R.string.voice_sample);
+        out.append("模型：").append(MimoTtsClient.MODEL)
+                .append("，音色：").append(mimoVoice).append("\n");
+        out.append("文案：").append(sample).append("\n");
+        out.append("请求：").append(MimoTtsClient.BASE_URL).append("/chat/completions\n");
+        try {
+            byte[] audio = MimoTtsClient.synthesize(mimoKey, mimoVoice, sample);
+            out.append("状态：成功，返回 wav ").append(audio.length).append(" 字节\n\n");
+        } catch (Exception e) {
+            out.append("状态：失败\n").append(message(e)).append("\n\n");
+        }
     }
 
     /** 和风天气：按定位坐标或城市名解析位置，再查实时天气 / 逐小时 / 每日预报。 */

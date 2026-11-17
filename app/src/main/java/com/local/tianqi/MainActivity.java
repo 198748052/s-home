@@ -22,6 +22,7 @@ public class MainActivity extends Activity {
 
     private LunarService lunarService;
     private WeatherService weatherService;
+    private VoiceAnnouncer voice;
 
     private TextView tvSolarDate;
     private TextView tvWeekday;
@@ -29,6 +30,7 @@ public class MainActivity extends Activity {
     private TextView tvLunarMonth;
     private TextView tvLunarDayName;
     private TextView tvLunarDayNum;
+    private View lunarCard;
     private View hourlyScroll;
     private LinearLayout hourlyRow;
     private LinearLayout forecastRow;
@@ -36,12 +38,17 @@ public class MainActivity extends Activity {
     private PullRefreshScrollView contentScroll;
     private boolean locationRequested;
 
+    /** 播报用的最新数据：点哪个区域就念对应内容。 */
+    private LunarInfo lunarInfo;
+    private WeatherSnapshot snapshot;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         lunarService = new LunarService(this);
         weatherService = new WeatherService(this);
+        voice = new VoiceAnnouncer(this);
 
         tvSolarDate = findViewById(R.id.tvSolarDate);
         tvWeekday = findViewById(R.id.tvWeekday);
@@ -49,10 +56,19 @@ public class MainActivity extends Activity {
         tvLunarMonth = findViewById(R.id.tvLunarMonth);
         tvLunarDayName = findViewById(R.id.tvLunarDayName);
         tvLunarDayNum = findViewById(R.id.tvLunarDayNum);
+        lunarCard = findViewById(R.id.lunarCard);
         hourlyScroll = findViewById(R.id.hourlyScroll);
         hourlyRow = findViewById(R.id.hourlyRow);
         forecastRow = findViewById(R.id.forecastRow);
         gateEntry = findViewById(R.id.gateEntry);
+
+        // 点农历卡片：播报农历月日
+        lunarCard.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                announce(SpeechText.lunar(lunarInfo));
+            }
+        });
 
         contentScroll = findViewById(R.id.contentScroll);
         contentScroll.setRefreshHeader(findViewById(R.id.tvRefreshHint));
@@ -87,6 +103,23 @@ public class MainActivity extends Activity {
         super.onResume();
         render();
         refreshData();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (voice != null) {
+            voice.release();
+        }
+    }
+
+    /** 播报一段文案；没有数据时提示一下，不弹空语音。 */
+    private void announce(String text) {
+        if (text == null || text.isEmpty()) {
+            Toast.makeText(this, R.string.voice_no_data, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        voice.announce(text);
     }
 
     /** 定位模式下没有权限就先申请一次，拒绝也没关系，会回退到上次位置或城市名。 */
@@ -167,6 +200,7 @@ public class MainActivity extends Activity {
     }
 
     private void applyLunar(LunarInfo lunar) {
+        lunarInfo = lunar;
         if (lunar == null) {
             tvLunarMonth.setText("");
             tvLunarDayName.setText("");
@@ -182,6 +216,7 @@ public class MainActivity extends Activity {
         if (snapshot == null) {
             return;
         }
+        this.snapshot = snapshot;
         if (snapshot.now != null) {
             tvNowWeather.setText(snapshot.now.text + " " + snapshot.now.temperature + "°");
         } else {
@@ -230,6 +265,13 @@ public class MainActivity extends Activity {
             if (i == 0) {
                 column.setBackgroundResource(R.drawable.bg_today_column);
             }
+            // 点逐小时区域：播报今天整天的天气
+            column.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    announce(SpeechText.today(snapshot));
+                }
+            });
 
             TextView hourLabel = new TextView(this);
             hourLabel.setText(TimeText.hour12(hour.hour));
@@ -281,6 +323,13 @@ public class MainActivity extends Activity {
             column.setPadding(dp(2), dp(8), dp(2), dp(10));
             column.setBackgroundResource(i == 0
                     ? R.drawable.bg_day_card_today : R.drawable.bg_day_card);
+            // 点每日预报区域：播报明天的天气预报
+            column.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    announce(SpeechText.tomorrow(snapshot));
+                }
+            });
 
             TextView dayLabel = new TextView(this);
             dayLabel.setText(dayLabel(i, day.dayOfWeek));

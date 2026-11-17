@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -15,6 +16,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 
@@ -54,6 +56,28 @@ public class MainActivityTest {
         Activity activity = Robolectric.buildActivity(MainActivity.class).setup().get();
         assertContent(activity);
         measure(activity);
+    }
+
+    /** 三处语音播报入口：农历卡片、逐小时、每日预报。 */
+    @Test
+    public void speechZonesAreClickable() {
+        Activity activity = Robolectric.buildActivity(MainActivity.class).setup().get();
+        assertTrue("农历卡片应可点击播报",
+                activity.findViewById(R.id.lunarCard).isClickable());
+
+        LinearLayout hourlyRow = activity.findViewById(R.id.hourlyRow);
+        LinearLayout forecastRow = activity.findViewById(R.id.forecastRow);
+        assertTrue("逐小时区域应可点击播报", hourlyRow.getChildAt(0).isClickable());
+        assertTrue("每日预报区域应可点击播报", forecastRow.getChildAt(0).isClickable());
+    }
+
+    @Test
+    public void tappingSpeechZonesDoesNotCrash() {
+        Activity activity = Robolectric.buildActivity(MainActivity.class).setup().get();
+        activity.findViewById(R.id.lunarCard).performClick();
+        ((ViewGroup) activity.findViewById(R.id.hourlyRow)).getChildAt(0).performClick();
+        ((ViewGroup) activity.findViewById(R.id.forecastRow)).getChildAt(0).performClick();
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
     }
 
     private void assertContent(Activity activity) {
@@ -102,7 +126,7 @@ public class MainActivityTest {
         LinearLayout forecastRow = activity.findViewById(R.id.forecastRow);
         View lunarMonth = activity.findViewById(R.id.tvLunarMonth);
         View lunarDayNum = activity.findViewById(R.id.tvLunarDayNum);
-        View lunarCard = (View) lunarMonth.getParent().getParent();
+        View lunarCard = activity.findViewById(R.id.lunarCard);
 
         View gateEntry = activity.findViewById(R.id.gateEntry);
         assertTrue("大门入口超出屏幕", gateEntry.getTop() >= 0 && gateEntry.getBottom() <= heightPx);

@@ -11,7 +11,7 @@
     <string name="settings_entry">设置</string>
     <string name="settings_title">设置</string>
     <string name="settings_back">返回</string>
-    <string name="settings_intro">农历仍使用聚合数据（juhe.cn）接口，天气改用和风天气（QWeather）。请填写和风天气控制台的 API Host（形如 abc1234xyz.re.qweatherapi.com）与 API Key，可先点「手动调用接口」确认能调通，再保存并返回首页。</string>
+    <string name="settings_intro">农历仍使用聚合数据（juhe.cn）接口，天气改用和风天气（QWeather），语音播报使用小米 MiMo 语音合成。请填写和风天气控制台的 API Host（形如 abc1234xyz.re.qweatherapi.com）与 API Key，可先点「手动调用接口」确认能调通，再保存并返回首页。</string>
     <string name="calendar_key_label">万年历接口 Key（聚合数据）</string>
     <string name="calendar_key_hint">用于 v.juhe.cn/calendar/day</string>
     <string name="weather_key_label">天气 API Key（和风天气）</string>
@@ -39,8 +39,21 @@
     <string name="settings_testing">调用中，请稍候...</string>
     <string name="settings_test_need_key">请先填写至少一个接口 Key</string>
     <string name="settings_test_result_label">接口返回内容</string>
-    <string name="settings_test_result_hint">点击「手动调用接口」后，这里会显示万年历、和风天气城市搜索、实时天气、逐小时和每日预报的原始返回内容。</string>
+    <string name="settings_test_result_hint">点击「手动调用接口」后，这里会显示万年历、和风天气城市搜索、实时天气、逐小时和每日预报，以及小米 MiMo 语音合成的原始返回内容。</string>
     <string name="settings_saved">设置已保存</string>
     <string name="cache_cleared">缓存已清除</string>
     <string name="settings_tip">无网络时：农历会按前一天缓存推算当天；天气会显示缓存，缓存跨天后自动隐藏逐小时预报。和风天气每日预报最多 10 天。</string>
+    <string name="voice_tap_lunar">点击播报农历</string>
+    <string name="voice_synthesizing">正在生成语音…</string>
+    <string name="voice_no_data">还没有数据，先下拉刷新一次</string>
+    <string name="voice_need_key">未填写 MiMo TTS Key，先用系统语音播报</string>
+    <string name="voice_mimo_failed">MiMo 语音合成失败（%1$s），改用系统语音</string>
+    <string name="voice_system_missing">系统语音不可用，请在设置里填写 MiMo TTS Key</string>
+    <string name="voice_sample">今天多云，最高12度，最低3度。</string>
+    <string name="tts_key_label">语音播报 Key（小米 MiMo TTS）</string>
+    <string name="tts_key_hint">MiMo 控制台的 API Key，留空则用系统语音</string>
+    <string name="tts_voice_label">播报音色</string>
+    <string name="tts_info">点击首页农历卡片播报农历月日，点击逐小时天气播报今天的天气，点击每日预报播报明天的天气。合成结果会缓存，同一段话再点不会重复请求。</string>
+    <string name="tts_test">试听播报</string>
+    <string name="tts_test_need_key">请先填写 MiMo TTS Key</string>
 </resources>

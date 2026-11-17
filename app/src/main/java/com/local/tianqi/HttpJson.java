@@ -6,6 +6,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -56,6 +57,86 @@ final class HttpJson {
                 connection.disconnect();
             }
         }
+    }
+
+    /**
+     * POST 一段 JSON 并解析响应，用于小米 MiMo 的语音合成接口。
+     * 语音合成要等模型推理，读超时比 GET 宽松一些。
+     */
+    static JSONObject postJson(String url, Map<String, String> headers, String body,
+                               int readTimeoutMs) throws IOException {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(readTimeoutMs > 0 ? readTimeoutMs : READ_TIMEOUT_MS);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            if (headers != null) {
+                for (Map.Entry<String, String> header : headers.entrySet()) {
+                    if (header.getKey() != null && header.getValue() != null) {
+                        connection.setRequestProperty(header.getKey(), header.getValue());
+                    }
+                }
+            }
+
+            byte[] payload = (body == null ? "" : body).getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(payload.length);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(payload);
+            }
+
+            int status = connection.getResponseCode();
+            InputStream stream = status >= 200 && status < 300
+                    ? connection.getInputStream() : connection.getErrorStream();
+            String text = readAll(stream);
+            if (status < 200 || status >= 300) {
+                throw new IOException(errorMessage(status, text));
+            }
+            return new JSONObject(text);
+        } catch (org.json.JSONException e) {
+            throw new IOException("响应不是合法 JSON", e);
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    /**
+     * 错误响应优先取 {@code error.message}，例如 MiMo 返回
+     * {@code {"error":{"message":"Invalid API Key"}}}，这样提示比整段 JSON 好读。
+     */
+    private static String errorMessage(int status, String body) {
+        String detail = "";
+        try {
+            JSONObject json = new JSONObject(body == null ? "" : body);
+            JSONObject error = json.optJSONObject("error");
+            if (error != null) {
+                detail = error.optString("message", "").trim();
+            }
+            if (detail.isEmpty()) {
+                detail = json.optString("message", "").trim();
+            }
+        } catch (org.json.JSONException ignored) {
+        }
+        if (detail.isEmpty()) {
+            // 有些运行时对 401/403 不保留响应体，这里补一句能看懂的提示
+            if (status == 401 || status == 403) {
+                detail = "鉴权失败，请检查 API Key";
+            } else {
+                detail = brief(body);
+            }
+        }
+        return "HTTP " + status + "：" + detail;
+    }
+
+    /** 错误响应可能很长（含 base64），截断后再拼进异常信息。 */
+    private static String brief(String body) {
+        String value = body == null ? "" : body.trim();
+        return value.length() > 300 ? value.substring(0, 300) + "…" : value;
     }
 
     static String encode(String value) {

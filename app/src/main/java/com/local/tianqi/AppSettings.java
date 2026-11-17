@@ -11,6 +11,10 @@ public final class AppSettings {
     private static final String KEY_WEATHER_HOST = "weather_host";
     private static final String KEY_CITY = "city";
     private static final String DEFAULT_CITY = "北京";
+    /** 小米 MiMo 语音合成（TTS）的 API Key。 */
+    private static final String KEY_TTS = "tts_key";
+    /** 播报音色，取值见 MimoTtsClient.VOICES。 */
+    private static final String KEY_TTS_VOICE = "tts_voice";
 
     /** 是否使用设备定位的坐标。开启后天气按坐标查，不再走城市名搜索。 */
     private static final String KEY_USE_LOCATION = "use_location";
@@ -52,6 +56,26 @@ public final class AppSettings {
     public String getCity() {
         String city = preferences.getString(KEY_CITY, DEFAULT_CITY).trim();
         return city.isEmpty() ? DEFAULT_CITY : city;
+    }
+
+    /** 小米 MiMo 语音合成的 API Key，留空则只用系统自带语音播报。 */
+    public String getMimoKey() {
+        return preferences.getString(KEY_TTS, "").trim();
+    }
+
+    public void setMimoKey(String key) {
+        preferences.edit().putString(KEY_TTS, key == null ? "" : key.trim()).apply();
+    }
+
+    /** 播报音色，默认冰糖。 */
+    public String getMimoVoice() {
+        String voice = preferences.getString(KEY_TTS_VOICE, "").trim();
+        return voice.isEmpty() ? MimoTtsClient.DEFAULT_VOICE : voice;
+    }
+
+    public void setMimoVoice(String voice) {
+        preferences.edit().putString(KEY_TTS_VOICE,
+                MimoTtsClient.normalizeVoice(voice)).apply();
     }
 
     /** 是否使用设备定位。默认开启，失败时回退到上次定位坐标。 */
