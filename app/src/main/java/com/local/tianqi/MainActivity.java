@@ -303,6 +303,10 @@ public class MainActivity extends Activity {
             if (i == 0) {
                 column.setBackgroundResource(R.drawable.bg_today_column);
             }
+            if (hour.simulated) {
+                // 本地模拟补出来的小时：灰显（状态行会说明），别让人当成真预报
+                column.setAlpha(0.5f);
+            }
             // 点逐小时区域：播报今天整天的天气
             column.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -361,6 +365,10 @@ public class MainActivity extends Activity {
             column.setPadding(dp(2), dp(8), dp(2), dp(10));
             column.setBackgroundResource(i == 0
                     ? R.drawable.bg_day_card_today : R.drawable.bg_day_card);
+            if (day.simulated) {
+                // 真实缓存不够 10 天时补出来的那几天：灰显，状态行里也会写明
+                column.setAlpha(0.5f);
+            }
             // 点每日预报区域：播报明天的天气预报
             column.setOnClickListener(new View.OnClickListener() {
                 @Override

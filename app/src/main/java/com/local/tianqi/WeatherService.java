@@ -91,6 +91,7 @@ public final class WeatherService {
         String status = statusOverride != null
                 ? statusOverride
                 : buildStatus(cachedDaily.updatedAt, cachedHourly.updatedAt, now, hourly.isEmpty());
+        status = withSimulatedNote(status, countSimulatedDays(daily), countSimulatedHours(hourly));
         return new WeatherSnapshot(daily, hourly, nowWeather,
                 cachedDaily.updatedAt, cachedHourly.updatedAt,
                 cachedNow.updatedAt, staleDaily, status);
@@ -109,7 +110,7 @@ public final class WeatherService {
         final String key = settings.getWeatherKey();
         final String base = QWeatherApi.baseUrl(settings.getWeatherHost());
         if (key.isEmpty() || base.isEmpty()) {
-            callback.onSnapshot(loadSnapshot("未配置和风天气 API Host 或 Key，显示本地数据"));
+            callback.onSnapshot(loadSnapshot("未配置天气 Key，当前为模拟数据（灰显）"));
             return;
         }
         if (!refreshing.compareAndSet(false, true)) {
@@ -623,10 +624,14 @@ public final class WeatherService {
         return null;
     }
 
+    /**
+     * 状态文案。除了「缓存多旧」之外，还要说明有多少天/多少小时是本地模拟补出来的——
+     * 否则真实缓存不够 10 天时，用户会把补出来的那几天当成真预报。
+     */
     private String buildStatus(long dailyUpdatedAt, long hourlyUpdatedAt,
                                long now, boolean hourlyHidden) {
         if (dailyUpdatedAt <= 0) {
-            return "本地模拟数据";
+            return "本地模拟数据（灰显）";
         }
         int days = daysAgo(dailyUpdatedAt, now);
         String status;
@@ -641,6 +646,46 @@ public final class WeatherService {
             status += "，逐小时已隐藏";
         }
         return status;
+    }
+
+    /**
+     * 补一句「有多少天/小时是模拟数据」；文案里已经说明是本地数据的就不再重复。
+     * 措辞尽量短：首页只留一行，太长会挤掉别的信息。
+     */
+    static String withSimulatedNote(String status, int simulatedDays, int simulatedHours) {
+        String text = status == null ? "" : status;
+        if (text.contains("模拟") || text.contains("本地数据")) {
+            return text;
+        }
+        if (simulatedDays > 0) {
+            text += "，含 " + simulatedDays + " 天模拟（灰显）";
+        }
+        if (simulatedHours > 0) {
+            text += "，逐小时为模拟（灰显）";
+        }
+        return text;
+    }
+
+    /** 列表里有几天是本地模拟补出来的。 */
+    static int countSimulatedDays(List<WeatherDay> days) {
+        int count = 0;
+        for (WeatherDay day : days) {
+            if (day.simulated) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 列表里有几小时是本地模拟补出来的。 */
+    static int countSimulatedHours(List<HourlyWeather> hours) {
+        int count = 0;
+        for (HourlyWeather hour : hours) {
+            if (hour.simulated) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private CachedNow readNowCache() {

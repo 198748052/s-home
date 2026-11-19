@@ -37,7 +37,8 @@ public final class LocalWeatherRepository implements WeatherRepository {
             }
 
             days.add(new WeatherDay(dateKey(year, month, dayOfMonth), year, month, dayOfMonth,
-                    isoDow, condition, high, low, rainChance(condition, random)));
+                    isoDow, condition, condition.code, high, low,
+                    rainChance(condition, random), true));
             calendar.add(Calendar.DAY_OF_MONTH, 1);
         }
         return days;
@@ -59,7 +60,8 @@ public final class LocalWeatherRepository implements WeatherRepository {
             // 昼夜温度曲线：5 点最低，17 点最高
             double factor = 0.5 - 0.5 * Math.cos(2 * Math.PI * (hour - 5) / 24.0);
             int temp = (int) Math.round(day.low + (day.high - day.low) * factor);
-            hours.add(new HourlyWeather(dateKey(target), hour, day.condition, temp));
+            hours.add(new HourlyWeather(dateKey(target), hour, day.condition, day.code, temp,
+                    true));
         }
         return hours;
     }

@@ -15,6 +15,11 @@ public final class WeatherDay {
     public final int low;
     /** 降水概率，0-100 */
     public final int rainChance;
+    /**
+     * 这一天是不是本地模拟出来的：真实缓存不够 10 天时，[WeatherService] 会用
+     * [LocalWeatherRepository] 补齐，界面必须能把这些天和真实预报区分开。
+     */
+    public final boolean simulated;
 
     public WeatherDay(int year, int month, int dayOfMonth, int dayOfWeek,
                       WeatherCondition condition, int high, int low, int rainChance) {
@@ -31,6 +36,13 @@ public final class WeatherDay {
     public WeatherDay(String dateKey, int year, int month, int dayOfMonth, int dayOfWeek,
                       WeatherCondition condition, String code, int high, int low,
                       int rainChance) {
+        this(dateKey, year, month, dayOfMonth, dayOfWeek, condition, code,
+                high, low, rainChance, false);
+    }
+
+    public WeatherDay(String dateKey, int year, int month, int dayOfMonth, int dayOfWeek,
+                      WeatherCondition condition, String code, int high, int low,
+                      int rainChance, boolean simulated) {
         this.dateKey = dateKey;
         this.year = year;
         this.month = month;
@@ -41,6 +53,7 @@ public final class WeatherDay {
         this.high = high;
         this.low = low;
         this.rainChance = rainChance;
+        this.simulated = simulated;
     }
 
     /** 和风天气的现象代码固定三位；历史缓存里的空值或异常值回退到大类默认代码。 */

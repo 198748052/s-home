@@ -104,10 +104,12 @@ public class MainActivityTest {
         assertEquals(10, forecastRow.getChildCount());
         assertEquals(12, hourlyRow.getChildCount());
 
-        // 首装没有真实数据：状态行要说明数据来自本地
+        // 首装没有真实数据：模拟出来的卡片灰显，状态行要说明是模拟数据
+        assertEquals(0.5f, forecastRow.getChildAt(0).getAlpha(), 0.01f);
+        assertEquals(0.5f, hourlyRow.getChildAt(0).getAlpha(), 0.01f);
         TextView status = activity.findViewById(R.id.tvStatus);
         assertEquals(View.VISIBLE, status.getVisibility());
-        assertTrue(status.getText().toString(), status.getText().toString().contains("未配置"));
+        assertTrue(status.getText().toString(), status.getText().toString().contains("模拟"));
     }
 
     private void assertNoChildOverflow(ViewGroup row, String name) {

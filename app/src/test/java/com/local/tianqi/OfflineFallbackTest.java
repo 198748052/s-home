@@ -1,6 +1,7 @@
 package com.local.tianqi;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -109,6 +110,43 @@ public class OfflineFallbackTest {
         assertEquals(12, snapshot.hourly.size());
         assertNotNull(snapshot.now);
         assertTrue(snapshot.status.contains("本地模拟数据"));
+        assertTrue("没有缓存时整天都该标成模拟", snapshot.daily.get(0).simulated);
+        assertTrue(snapshot.hourly.get(0).simulated);
+    }
+
+    /** 真实缓存不够 10 天时补出来的那几天必须带模拟标记，状态行也要写明。 */
+    @Test
+    public void paddedForecastDaysAreMarkedAsSimulated() throws Exception {
+        Calendar cursor = Calendar.getInstance();
+        JSONArray days = new JSONArray();
+        for (int i = 0; i < 3; i++) {
+            JSONObject day = new JSONObject();
+            day.put("date", dateKey(cursor));
+            day.put("year", cursor.get(Calendar.YEAR));
+            day.put("month", cursor.get(Calendar.MONTH) + 1);
+            day.put("day", cursor.get(Calendar.DAY_OF_MONTH));
+            day.put("dayOfWeek", isoDayOfWeek(cursor));
+            day.put("text", "晴");
+            day.put("code", "100");
+            day.put("high", 20 + i);
+            day.put("low", 10 + i);
+            day.put("rainChance", 0);
+            days.put(day);
+            cursor.add(Calendar.DAY_OF_MONTH, 1);
+        }
+        JSONObject cache = new JSONObject();
+        cache.put("updatedAt", System.currentTimeMillis());
+        cache.put("days", days);
+        preferences.edit().putString("weather_daily_cache", cache.toString()).commit();
+
+        WeatherSnapshot snapshot = new WeatherService(context).loadSnapshot();
+
+        assertEquals(10, snapshot.daily.size());
+        assertFalse("真实缓存的天不该标成模拟", snapshot.daily.get(0).simulated);
+        assertFalse(snapshot.daily.get(2).simulated);
+        assertTrue("补出来的天要标成模拟", snapshot.daily.get(3).simulated);
+        assertTrue(snapshot.daily.get(9).simulated);
+        assertTrue(snapshot.status, snapshot.status.contains("含 7 天模拟"));
     }
 
     private static int isoDayOfWeek(Calendar calendar) {
