@@ -59,6 +59,14 @@ public final class AppSettings {
         return keysStore;
     }
 
+    /** 页面销毁时释放拉取器：它常驻一个线程，不放会随 Activity 重建累积。 */
+    public void releaseKeysStore() {
+        if (keysStore != null) {
+            keysStore.release();
+            keysStore = null;
+        }
+    }
+
     // ---------- 接口 Key（云端同步写进来的就是这几个） ----------
 
     public String getCalendarKey() {

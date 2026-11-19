@@ -39,6 +39,8 @@ public class MainActivity extends Activity {
     private View gateEntry;
     private PullRefreshScrollView contentScroll;
     private boolean locationRequested;
+    /** 上次看到的定位开关状态，用来发现用户是不是刚在设置页改过。 */
+    private boolean lastLocationMode;
 
     /** 播报用的最新数据：点哪个区域就念对应内容。 */
     private LunarInfo lunarInfo;
@@ -98,6 +100,7 @@ public class MainActivity extends Activity {
             }
         });
 
+        lastLocationMode = settings.isLocationMode();
         ensureLocationPermission();
         render();
         syncConfig();
@@ -106,6 +109,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // 用户可能刚在设置页打开了「使用系统定位」：模式变了就重新申请一次权限，
+        // 否则拒绝过一次之后回到首页永远不再弹窗，定位功能等于静默失效。
+        boolean locationMode = settings.isLocationMode();
+        if (locationMode != lastLocationMode) {
+            lastLocationMode = locationMode;
+            locationRequested = false;
+        }
+        ensureLocationPermission();
         render();
         refreshData();
     }
@@ -115,6 +126,16 @@ public class MainActivity extends Activity {
         super.onDestroy();
         if (voice != null) {
             voice.release();
+        }
+        // 这三个各带一个常驻线程，不释放会随 Activity 重建一直累积
+        if (weatherService != null) {
+            weatherService.release();
+        }
+        if (lunarService != null) {
+            lunarService.release();
+        }
+        if (settings != null) {
+            settings.releaseKeysStore();
         }
     }
 

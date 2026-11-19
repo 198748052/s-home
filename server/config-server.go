@@ -585,6 +585,12 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求不是合法 JSON"})
 		return
 	}
+	// 先校验再写盘：原来在闭包里 return 只会跳出闭包，配置照样保存、接口照样回 ok，
+	// 用户以为口令换了，其实没换。
+	if req.NewPass != "" && len(req.NewPass) < 6 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "新口令至少 6 位"})
+		return
+	}
 
 	oldPort := a.settings().Port
 	newToken := ""
@@ -597,9 +603,6 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 			s.AdminUser = u
 		}
 		if len(req.NewPass) > 0 {
-			if len(req.NewPass) < 6 {
-				return
-			}
 			s.AdminSalt = randomHex(16)
 			s.AdminHash = hashPassword(req.NewPass, s.AdminSalt)
 		}

@@ -227,6 +227,16 @@ public class KeysStoreTest {
         }
     }
 
+    /** release() 之后还有同步请求（销毁瞬间的点击），要同步回结果而不是抛异常。 */
+    @Test
+    public void refreshAfterReleaseStillAnswers() {
+        KeysStore store = settings.keysStore();
+        store.release();
+
+        Result result = refresh(settings, true);
+        assertFalse(result.changed);
+    }
+
     @Test
     public void networkErrorsAreTranslatedToActionableHints() {
         assertTrue(KeysStore.explain(new java.io.IOException(

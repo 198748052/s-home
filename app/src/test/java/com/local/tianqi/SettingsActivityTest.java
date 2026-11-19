@@ -2,10 +2,13 @@ package com.local.tianqi;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Looper;
@@ -20,7 +23,9 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.shadows.ShadowActivity;
 
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -28,6 +33,7 @@ import android.widget.TextView;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.Arrays;
 import java.util.concurrent.Callable;
 
 @RunWith(RobolectricTestRunner.class)
@@ -51,6 +57,47 @@ public class SettingsActivityTest {
         assertEquals(activity.getString(R.string.settings_test_need_key),
                 result.getText().toString());
         saveScreenshot(activity);
+    }
+
+    /** 在设置页勾上「使用系统定位」时就申请权限，别等回到首页才发现没权限。 */
+    @Test
+    public void enablingLocationRequestsPermission() {
+        Context context = RuntimeEnvironment.getApplication();
+        context.getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                .edit().putBoolean("use_location", false).commit();
+
+        SettingsActivity activity = Robolectric.buildActivity(SettingsActivity.class).setup().get();
+        CheckBox box = activity.findViewById(R.id.cbUseLocation);
+        assertFalse(box.isChecked());
+
+        box.setChecked(true);
+
+        ShadowActivity.PermissionsRequest request =
+                Shadows.shadowOf(activity).getLastRequestedPermission();
+        assertNotNull("勾选定位后应立刻申请权限", request);
+        assertTrue(Arrays.asList(request.requestedPermissions)
+                .contains(Manifest.permission.ACCESS_FINE_LOCATION));
+    }
+
+    /** 拒绝权限后开关要回到「关」，否则设置页会一直说「打开首页会自动定位」。 */
+    @Test
+    public void denyingPermissionUnchecksLocation() {
+        Context context = RuntimeEnvironment.getApplication();
+        context.getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                .edit().putBoolean("use_location", false).commit();
+
+        SettingsActivity activity = Robolectric.buildActivity(SettingsActivity.class).setup().get();
+        CheckBox box = activity.findViewById(R.id.cbUseLocation);
+        box.setChecked(true);
+        assertTrue(box.isChecked());
+
+        // 与 SettingsActivity.REQUEST_LOCATION 保持一致
+        activity.onRequestPermissionsResult(1001,
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                new int[]{PackageManager.PERMISSION_DENIED});
+
+        assertFalse("拒绝后开关应回到关闭", box.isChecked());
+        assertFalse(new AppSettings(context).isLocationMode());
     }
 
     @Test

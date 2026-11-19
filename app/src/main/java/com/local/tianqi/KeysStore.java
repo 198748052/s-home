@@ -127,6 +127,11 @@ public final class KeysStore {
 
     /** 拉一次 Key。{@code force=false} 时刚拉过就跳过。 */
     public void refresh(boolean force, final Callback callback) {
+        if (executor.isShutdown()) {
+            // 页面已经销毁：别再排队
+            callback.onKeys(current(), false, context.getString(R.string.keys_fresh));
+            return;
+        }
         final String target = url();
         if (target.isEmpty()) {
             callback.onKeys(current(), false, context.getString(R.string.keys_no_url));
@@ -217,6 +222,12 @@ public final class KeysStore {
             return "HTTPS 证书有问题（自签名或域名不匹配）";
         }
         return raw;
+    }
+
+    /** 页面销毁时调用：停掉常驻线程，丢掉还没回到主线程的回调。 */
+    public void release() {
+        executor.shutdownNow();
+        mainHandler.removeCallbacksAndMessages(null);
     }
 
     /** 清掉缓存，同时清掉由云端写入的本地 Key（用户自己填的保留）。 */

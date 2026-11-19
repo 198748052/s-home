@@ -104,6 +104,10 @@ public class SettingsActivity extends Activity {
                 settings.setLocationMode(isChecked);
                 if (!isChecked) {
                     settings.clearDeviceLocation();
+                } else if (!DeviceLocation.hasPermission(SettingsActivity.this)) {
+                    // 用户刚打开定位开关：就在这儿申请权限，回到首页才不会静默失效
+                    requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION}, REQUEST_LOCATION);
                 }
                 updateLocationInfo();
             }
@@ -302,6 +306,10 @@ public class SettingsActivity extends Activity {
         if (granted) {
             startLocate();
         } else {
+            // 没权限就别把开关留在「已开启」，否则设置页会一直显示「打开首页会自动定位」
+            if (cbUseLocation != null) {
+                cbUseLocation.setChecked(false);
+            }
             Toast.makeText(this, R.string.settings_locate_denied, Toast.LENGTH_LONG).show();
         }
     }
@@ -433,6 +441,9 @@ public class SettingsActivity extends Activity {
         }
         if (executor != null) {
             executor.shutdownNow();
+        }
+        if (settings != null) {
+            settings.releaseKeysStore();
         }
         if (voice != null) {
             voice.release();

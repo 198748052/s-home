@@ -545,3 +545,23 @@ func TestSettingsSnapshotIsRaceFree(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// 改口令太短要当场 400，不能静默忽略还回 ok：原来闭包里 return 只是跳出闭包，
+// 配置照样保存、页面提示「已保存」并清空输入框，用户以为口令换了其实没换。
+func TestAdminSettingsRejectsShortPassword(t *testing.T) {
+	svc := newTestApp(t)
+	withCookie := setupAdmin(t, svc)
+
+	rec := httptest.NewRecorder()
+	svc.handleSettings(rec, withCookie(http.MethodPost, "/api/admin/settings", `{"newPass":"123"}`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("短口令应 400，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	svc.handleLogin(rec, httptest.NewRequest(http.MethodPost, "/api/admin/login",
+		strings.NewReader(`{"user":"admin","pass":"secret123"}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("旧口令应仍然有效，实际 %d", rec.Code)
+	}
+}

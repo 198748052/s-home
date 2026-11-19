@@ -1,9 +1,12 @@
 package com.local.tianqi;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Looper;
@@ -16,9 +19,12 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
 import org.robolectric.Shadows;
+import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
+import org.robolectric.shadows.ShadowActivity;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -79,6 +85,29 @@ public class MainActivityTest {
         ((ViewGroup) activity.findViewById(R.id.hourlyRow)).getChildAt(0).performClick();
         ((ViewGroup) activity.findViewById(R.id.forecastRow)).getChildAt(0).performClick();
         Shadows.shadowOf(Looper.getMainLooper()).idle();
+    }
+
+    /** 用户后来在设置页打开定位，回到首页要重新申请权限，而不是永远静默失效。 */
+    @Test
+    public void turningLocationOnLaterAsksForPermissionAgain() {
+        Context context = RuntimeEnvironment.getApplication();
+        context.getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                .edit().clear().putBoolean("use_location", false).commit();
+
+        ActivityController<MainActivity> controller =
+                Robolectric.buildActivity(MainActivity.class).setup();
+        MainActivity activity = controller.get();
+        assertNull("定位关着时不该申请权限",
+                Shadows.shadowOf(activity).getLastRequestedPermission());
+
+        // 模拟去设置页打开「使用系统定位」，再回到首页
+        context.getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                .edit().putBoolean("use_location", true).commit();
+        controller.pause().resume();
+
+        ShadowActivity.PermissionsRequest request =
+                Shadows.shadowOf(activity).getLastRequestedPermission();
+        assertNotNull("打开定位开关后应重新申请权限", request);
     }
 
     private void assertContent(Activity activity) {

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
@@ -21,6 +22,7 @@
             android:paddingEnd="20dp"
             android:paddingBottom="8dp">
 
+            <!-- 下拉刷新提示条：高度由 PullRefreshScrollView 在代码里控制，所以这里固定 0dp -->
             <TextView
                 android:id="@+id/tvRefreshHint"
                 android:layout_width="match_parent"
@@ -29,7 +31,8 @@
                 android:text="@string/pull_refresh_hint"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp"
-                android:visibility="gone" />
+                android:visibility="gone"
+                tools:ignore="Suspicious0dp" />
 
             <LinearLayout
                 android:layout_width="match_parent"

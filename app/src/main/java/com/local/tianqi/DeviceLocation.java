@@ -153,6 +153,8 @@ final class DeviceLocation {
             latch.await(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        } catch (SecurityException e) {
+            // 入口已经查过权限，但用户可能在等待期间撤销：当作没定位到，走兜底
         } catch (RuntimeException ignored) {
         } finally {
             try {

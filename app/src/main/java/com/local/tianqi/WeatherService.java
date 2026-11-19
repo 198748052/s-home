@@ -107,6 +107,11 @@ public final class WeatherService {
     }
 
     private void refresh(final Callback callback, final boolean force) {
+        if (executor.isShutdown()) {
+            // 页面已经销毁：别再排队，直接回当前缓存
+            callback.onSnapshot(loadSnapshot());
+            return;
+        }
         final String key = settings.getWeatherKey();
         final String base = QWeatherApi.baseUrl(settings.getWeatherHost());
         if (key.isEmpty() || base.isEmpty()) {
@@ -256,6 +261,12 @@ public final class WeatherService {
             settings.updateLocationCoordinates(latitude, longitude);
         }
         return true;
+    }
+
+    /** 页面销毁时调用：停掉常驻线程，丢掉还没回到主线程的回调。 */
+    public void release() {
+        executor.shutdownNow();
+        mainHandler.removeCallbacksAndMessages(null);
     }
 
     public void clearCache() {

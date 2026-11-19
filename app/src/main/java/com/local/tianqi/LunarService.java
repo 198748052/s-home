@@ -44,6 +44,11 @@ public final class LunarService {
     }
 
     public void refreshIfNeeded(Callback callback) {
+        if (executor.isShutdown()) {
+            // 页面已经销毁：别再排队
+            callback.onLunar(loadCachedOrLocal(), "已销毁");
+            return;
+        }
         Calendar now = Calendar.getInstance();
         LunarInfo cached = readCache();
         boolean sameDay = cached != null && cached.dateKey.equals(dateKey(now));
@@ -89,6 +94,12 @@ public final class LunarService {
                 });
             }
         });
+    }
+
+    /** 页面销毁时调用：停掉常驻线程，丢掉还没回到主线程的回调。 */
+    public void release() {
+        executor.shutdownNow();
+        mainHandler.removeCallbacksAndMessages(null);
     }
 
     public void clearCache() {

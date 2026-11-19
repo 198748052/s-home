@@ -79,4 +79,20 @@ public class ForecastRefreshTest {
         assertNotNull(holder[0]);
         assertTrue(holder[0].status.contains("未配置"));
     }
+
+    /** release() 之后还有刷新进来（销毁瞬间的点击），要同步回一份快照而不是抛异常。 */
+    @Test
+    public void refreshAfterReleaseStillAnswers() {
+        WeatherService service = new WeatherService(context);
+        service.release();
+
+        final WeatherSnapshot[] holder = new WeatherSnapshot[1];
+        service.refresh(new WeatherService.Callback() {
+            @Override
+            public void onSnapshot(WeatherSnapshot snapshot) {
+                holder[0] = snapshot;
+            }
+        });
+        assertNotNull("销毁后刷新也要有回调", holder[0]);
+    }
 }
