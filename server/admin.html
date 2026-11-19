@@ -65,11 +65,14 @@
   <!-- 首次设置 -->
   <section class="panel hidden" id="panel-setup">
     <h2>先设置管理员口令</h2>
-    <p>这是第一次打开，设置一个用户名和口令，之后用它登录本页。</p>
+    <p>这是第一次打开，设置一个用户名和口令，之后用它登录本页。
+      设置码在服务端启动日志里（<span class="mono">journalctl -u tianqi-config | grep 首次设置</span>）；
+      从服务器本机打开本页可以留空。</p>
     <div class="grid">
       <div><label>用户名</label><input type="text" id="setupUser" value="admin"></div>
       <div><label>口令（至少 6 位）</label><input type="password" id="setupPass"></div>
       <div><label>再输一次</label><input type="password" id="setupPass2"></div>
+      <div><label>设置码（本机访问可留空）</label><input type="text" id="setupToken" class="mono"></div>
       <div><button class="primary" id="setupBtn">设置并进入</button></div>
     </div>
   </section>
@@ -256,7 +259,10 @@ async function doSetup() {
   try {
     await api('/api/admin/setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Setup-Token': $('setupToken').value.trim(),
+      },
       body: JSON.stringify({ user: $('setupUser').value, pass: pass }),
     });
     setStatus('口令已设置', 'ok');

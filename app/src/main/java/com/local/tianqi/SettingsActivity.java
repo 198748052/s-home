@@ -56,6 +56,8 @@ public class SettingsActivity extends Activity {
     private ExecutorService executor;
     private Handler mainHandler;
     private VoiceAnnouncer voice;
+    /** 正在进行的定位请求；页面销毁时要取消，否则回调会打到已关闭的 executor 上。 */
+    private DeviceLocation.Handle locateHandle;
     private boolean testing;
     private boolean locating;
 
@@ -317,9 +319,12 @@ public class SettingsActivity extends Activity {
         locating = true;
         btnLocate.setEnabled(false);
         btnLocate.setText(R.string.settings_locating);
-        DeviceLocation.request(this, new DeviceLocation.Callback() {
+        locateHandle = DeviceLocation.request(this, new DeviceLocation.Callback() {
             @Override
             public void onLocation(double latitude, double longitude) {
+                if (isFinishing() || isDestroyed() || executor == null || executor.isShutdown()) {
+                    return;
+                }
                 resolveLocationName(latitude, longitude);
             }
 
@@ -422,6 +427,10 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (locateHandle != null) {
+            locateHandle.cancel();
+            locateHandle = null;
+        }
         if (executor != null) {
             executor.shutdownNow();
         }

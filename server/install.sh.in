@@ -152,13 +152,16 @@ echo "服务：systemctl status $SERVICE"
 echo "日志：journalctl -u $SERVICE -f"
 echo "目录：$DIR"
 echo
-echo "浏览器打开（第一次进去设置管理员口令）："
+echo "浏览器打开（第一次进去要填设置码 + 设置管理员口令）："
 if [ -n "$PUBLIC_IP" ]; then
     echo "  http://$PUBLIC_IP:$ACTUAL_PORT/admin      ← 从你自己电脑访问用这个（公网 IP）"
 else
     echo "  http://<服务器公网IP>:$ACTUAL_PORT/admin  ← 公网 IP 在云控制台看"
 fi
 echo "  http://$LAN_IP:$ACTUAL_PORT/admin        ← 内网 IP，只有同一内网/VPN 才能用"
+echo
+echo "首次设置的「设置码」在日志里（本机或 SSH 隧道访问时可留空）："
+echo "  journalctl -u $SERVICE | grep 首次设置"
 echo
 echo "打不开的话按顺序检查："
 echo "  1) 云厂商控制台 → 安全组 → 入方向放行 TCP $ACTUAL_PORT"

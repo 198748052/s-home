@@ -36,7 +36,8 @@ public final class KeysStore {
 
     private static final String KEY_JSON = "cloud_keys_json";
     private static final String KEY_ETAG = "cloud_keys_etag";
-    private static final String KEY_FETCHED_AT = "cloud_keys_fetched_at";
+    /** 上次拉取时间；测试里要手动把它拨回去，所以不是 private。 */
+    static final String KEY_FETCHED_AT = "cloud_keys_fetched_at";
 
     private final Context context;
     private final AppSettings settings;

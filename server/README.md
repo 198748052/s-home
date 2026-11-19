@@ -33,7 +33,7 @@
 | GET | `/api/health` | `X-Config-Token` | 版本号、端口 |
 | GET | `/admin` | 页面自带登录 | 管理页 |
 | GET | `/api/admin/state` | 可选 | 是否已设置口令 / 是否已登录 / 端口 / 域名 |
-| POST | `/api/admin/setup` | 无（仅首次） | 设置管理员口令 |
+| POST | `/api/admin/setup` | 设置码（`X-Setup-Token`）或本机 | 首次设置管理员口令 |
 | POST | `/api/admin/login` / `logout` | — | 登录 / 退出（会话 Cookie） |
 | GET/PUT | `/api/admin/config` | 会话或 Basic | 读 / 保存 Key（version 自增、写 `.bak`） |
 | POST | `/api/admin/settings` | 会话或 Basic | 端口、对外域名、管理员口令、App 令牌 |

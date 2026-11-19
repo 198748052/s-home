@@ -35,8 +35,9 @@ public class MainActivityTest {
         assertContent(activity);
         View decor = measure(activity);
         View scroll = activity.findViewById(R.id.contentScroll);
-        assertTrue("首屏内容需要滚动", ((ViewGroup) scroll).getChildAt(0).getHeight()
-                <= scroll.getHeight());
+        View content = ((ViewGroup) scroll).getChildAt(0);
+        assertTrue("首屏内容不能超出屏幕：" + content.getHeight() + " > " + scroll.getHeight(),
+                content.getHeight() <= scroll.getHeight());
 
         int widthPx = activity.getResources().getDisplayMetrics().widthPixels;
         int heightPx = activity.getResources().getDisplayMetrics().heightPixels;
@@ -102,6 +103,11 @@ public class MainActivityTest {
         assertTrue(weekday.getText().length() > 0);
         assertEquals(10, forecastRow.getChildCount());
         assertEquals(12, hourlyRow.getChildCount());
+
+        // 首装没有真实数据：状态行要说明数据来自本地
+        TextView status = activity.findViewById(R.id.tvStatus);
+        assertEquals(View.VISIBLE, status.getVisibility());
+        assertTrue(status.getText().toString(), status.getText().toString().contains("未配置"));
     }
 
     private void assertNoChildOverflow(ViewGroup row, String name) {

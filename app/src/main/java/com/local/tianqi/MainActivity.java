@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private TextView tvSolarDate;
     private TextView tvWeekday;
     private TextView tvNowWeather;
+    private TextView tvStatus;
     private TextView tvLunarMonth;
     private TextView tvLunarDayName;
     private TextView tvLunarDayNum;
@@ -55,6 +56,7 @@ public class MainActivity extends Activity {
         tvSolarDate = findViewById(R.id.tvSolarDate);
         tvWeekday = findViewById(R.id.tvWeekday);
         tvNowWeather = findViewById(R.id.tvNowWeather);
+        tvStatus = findViewById(R.id.tvStatus);
         tvLunarMonth = findViewById(R.id.tvLunarMonth);
         tvLunarDayName = findViewById(R.id.tvLunarDayName);
         tvLunarDayNum = findViewById(R.id.tvLunarDayNum);
@@ -237,6 +239,7 @@ public class MainActivity extends Activity {
             return;
         }
         this.snapshot = snapshot;
+        applyStatus(snapshot.status);
         if (snapshot.now != null) {
             tvNowWeather.setText(snapshot.now.text + " " + snapshot.now.temperature + "°");
         } else {
@@ -251,6 +254,21 @@ public class MainActivity extends Activity {
             buildHourlyRow(snapshot.hourly);
         }
         buildForecastRow(snapshot.daily);
+    }
+
+    /**
+     * 显示数据状态。除了「已更新」以外的状态（离线缓存、本地模拟数据、定位失败、未配置）
+     * 都用警示色，避免把模拟/过期数据当成刚拿到的真实天气。
+     */
+    private void applyStatus(String status) {
+        if (status == null || status.isEmpty()) {
+            tvStatus.setVisibility(View.GONE);
+            return;
+        }
+        tvStatus.setVisibility(View.VISIBLE);
+        tvStatus.setText(status);
+        tvStatus.setTextColor(getColor(status.startsWith("已更新")
+                ? R.color.text_secondary : R.color.warm));
     }
 
     private boolean isNarrow() {

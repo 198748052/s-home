@@ -79,9 +79,29 @@ public class KeysStoreTest {
             settings.setKeysUrl(server.baseUrl() + "/api/keys");
             refresh(settings, true);
 
-            Result second = refresh(settings, true);
+            // 60 秒节流会把第二次请求挡在本地，这里把它拨回去，模拟「过一会儿再启动」
+            settings.preferences().edit().putLong(KeysStore.KEY_FETCHED_AT, 0L).commit();
+
+            Result second = refresh(settings, false);
             assertFalse("304 不算变化", second.changed);
             assertEquals("\"v5\"", server.header("If-None-Match"));
+            assertEquals("cloud-qw", settings.getWeatherKey());
+        } finally {
+            server.close();
+        }
+    }
+
+    /** 手动同步（force）故意不带 If-None-Match，强制服务端回完整内容。 */
+    @Test
+    public void forcedRefreshSkipsEtagOnPurpose() throws Exception {
+        StubHttpServer server = StubHttpServer.start(200, KEYS_JSON, "\"v5\"");
+        try {
+            settings.setKeysUrl(server.baseUrl() + "/api/keys");
+            refresh(settings, true);
+
+            Result second = refresh(settings, true);
+            assertFalse("内容没变就不算变化", second.changed);
+            assertEquals("", server.header("If-None-Match"));
             assertEquals("cloud-qw", settings.getWeatherKey());
         } finally {
             server.close();

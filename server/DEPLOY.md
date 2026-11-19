@@ -42,7 +42,14 @@ sudo sh /tmp/install-amd64.sh
 
 浏览器访问 `http://服务器IP:8787/admin`：
 
-1. 第一次进去 → 设置管理员用户名和口令（**这一步不做，别人也能抢先设置**，装完请立刻打开）
+1. 第一次进去 → 先填「设置码」再设管理员用户名和口令。设置码在启动日志里：
+
+   ```bash
+   sudo journalctl -u tianqi-config | grep 首次设置
+   ```
+
+   从服务器本机打开本页（或 `ssh -L 8787:127.0.0.1:8787 root@服务器IP` 走隧道）时，设置码可以留空。
+   首次设置只接受「本机」或「带设置码」的请求，别人抢不走；设置完成后设置码自动失效。
 2. 进去后可以：
    - 填和风天气 Host / Key、聚合数据 Key、语音合成 Key
    - 换语音厂商（MiMo / OpenAI 兼容 / 自定义接口）
@@ -114,7 +121,7 @@ server {
 | 立刻让 App 生效 | App 设置页点「立即同步配置」 |
 | 升级服务端 | 重跑 `sudo sh /tmp/install-amd64.sh`（配置和口令不动） |
 | 配置改坏了 | `/root/data/tianqi/config.json.bak` 是上一版 |
-| 忘了管理口令 | 停服务，删 `/root/data/tianqi/server.json` 里的 `adminHash` 和 `adminSalt` 两行，重启后重新设置（**会保留端口和令牌**） |
+| 忘了管理口令 | 停服务，删 `/root/data/tianqi/server.json` 里的 `adminHash` 和 `adminSalt` 两行，重启后重新设置（**会保留端口和令牌**；重新设置同样需要日志里的设置码） |
 | 看日志 | `sudo journalctl -u tianqi-config -f` |
 | 重启服务 | `sudo systemctl restart tianqi-config` |
 
@@ -140,7 +147,7 @@ server {
 | 脚本报「二进制校验失败」 | 上传被截断，重新 scp |
 | 脚本报「请换 install-xxx.sh」 | 架构不匹配，`uname -m` 看一眼 |
 | 打开 `/admin` 打不开 | 云厂商安全组没放行端口；`sudo systemctl status tianqi-config` 看服务 |
-| 打开 `/admin` 又要求设置口令 | `server.json` 里 `adminHash` 为空（删过或没设置成功），重新设置即可 |
+| 打开 `/admin` 又要求设置口令 | `server.json` 里 `adminHash` 为空（删过或没设置成功），重新设置即可；这次同样要填启动日志里的设置码 |
 | 管理页一直转圈 / 加载失败 | 看 `journalctl -u tianqi-config -n 30`；多半是 `config.json` 不是合法 JSON |
 | 改端口后页面打不开 | 服务已用新端口重启，用 `http://IP:新端口/admin` 打开 |
 | App 拉 Key 401 | App 里的「访问令牌」与网页上的「App 访问令牌」不一致（轮换过令牌要在 App 设置页重新粘一次） |
@@ -151,7 +158,7 @@ server {
 
 # 安全清单
 
-- [ ] 装完立刻打开 `/admin` 设置口令（否则别人先设置就麻烦了）
+- [ ] 装完立刻打开 `/admin` 设置口令（首次设置要日志里的设置码，别人抢不走，但别拖）
 - [ ] 口令够长；能用反代限 IP 就限 `/admin`
 - [ ] 上 HTTPS（反代里配证书），否则口令和 Key 在链路上是明文
 - [ ] `server.json` 权限 600（脚本已设）

@@ -27,6 +27,17 @@ final class DeviceLocation {
         void onFailure(String message);
     }
 
+    /** 一次定位请求的句柄：页面销毁时 cancel()，避免回调打到已经关掉的执行器上。 */
+    interface Handle {
+        void cancel();
+    }
+
+    private static final Handle NONE = new Handle() {
+        @Override
+        public void cancel() {
+        }
+    };
+
     /** 一次定位结果。 */
     static final class Fix {
         final double latitude;
@@ -56,22 +67,22 @@ final class DeviceLocation {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    static void request(Context context, Callback callback) {
+    static Handle request(Context context, Callback callback) {
         LocationManager manager =
                 (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
         if (manager == null) {
             callback.onFailure("系统没有定位服务");
-            return;
+            return NONE;
         }
         if (!hasPermission(context)) {
             callback.onFailure("没有定位权限");
-            return;
+            return NONE;
         }
 
         Location lastKnown = newestLastKnown(manager);
         if (lastKnown != null && isFresh(lastKnown)) {
             callback.onLocation(lastKnown.getLatitude(), lastKnown.getLongitude());
-            return;
+            return NONE;
         }
 
         String provider = pickProvider(manager);
@@ -82,10 +93,12 @@ final class DeviceLocation {
             } else {
                 callback.onFailure("定位开关未打开，请在系统设置里打开定位，或直接填写城市名");
             }
-            return;
+            return NONE;
         }
 
-        new OneShot(manager, provider, callback).start();
+        OneShot shot = new OneShot(manager, provider, callback);
+        shot.start();
+        return shot;
     }
 
     /**
@@ -193,7 +206,7 @@ final class DeviceLocation {
     }
 
     /** 等一次实时定位，拿到就取消监听。 */
-    private static final class OneShot implements LocationListener {
+    private static final class OneShot implements LocationListener, Handle {
 
         private final LocationManager manager;
         private final String provider;
@@ -243,6 +256,12 @@ final class DeviceLocation {
             }
             finish();
             callback.onFailure(message);
+        }
+
+        /** 页面销毁时调用：摘掉监听和超时，之后的定位结果直接丢弃。 */
+        @Override
+        public void cancel() {
+            finish();
         }
 
         @Override

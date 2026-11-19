@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -46,9 +47,9 @@ const (
 	pbkdf2Rounds  = 120000
 	sessionTTL    = 7 * 24 * time.Hour
 	sessionCookie = "tianqi_session"
-	mimoModel = "mimo-v2.5-tts"
-	mimoVoice = "冰糖"
-	mimoStyle = "请用清晰自然、语速适中的播报语气朗读，像天气预报播音员一样。"
+	mimoModel     = "mimo-v2.5-tts"
+	mimoVoice     = "冰糖"
+	mimoStyle     = "请用清晰自然、语速适中的播报语气朗读，像天气预报播音员一样。"
 )
 
 // mimoEndpoint 语音合成地址（写死，测试里可以替换）
@@ -66,7 +67,7 @@ type settings struct {
 	SessionSecret string `json:"sessionSecret"`
 }
 
-func (s *settings) passwordSet() bool {
+func (s settings) passwordSet() bool {
 	return s.AdminHash != "" && s.AdminSalt != ""
 }
 
@@ -238,6 +239,9 @@ type app struct {
 	addrFlag   string
 	mu         chan struct{} // 简单互斥，保护 settings 读写
 	cfg        *settings
+	// setupToken 只存在内存里：首次设置口令时用来证明「你就是装了服务的那个人」。
+	// 每次启动重新生成并打到日志，重启前没设置完就换一个。
+	setupToken string
 	// restart 默认是「退出进程，让 systemd 拉起来」；测试里换成空实现
 	restart func()
 }
@@ -252,18 +256,25 @@ func newApp(configPath, dataDir, addrFlag string, port int) (*app, error) {
 		return nil, err
 	}
 	a := &app{configPath: configPath, dataDir: dataDir, addrFlag: addrFlag,
-		mu: make(chan struct{}, 1), cfg: s}
+		mu: make(chan struct{}, 1), cfg: s, setupToken: randomHex(16)}
 	a.restart = func() {
 		time.Sleep(300 * time.Millisecond)
 		os.Exit(0)
 	}
 	a.mu <- struct{}{}
+	if !s.passwordSet() {
+		// 端口默认对公网开放，首次设置必须能证明身份，否则谁先到谁就能设口令。
+		log.Printf("首次设置：打开 /admin 后把「设置码」填成 %s（本机直接访问可留空）", a.setupToken)
+	}
 	return a, nil
 }
 
-func (a *app) settings() *settings {
+// settings 返回配置快照。
+// 必须拷贝：调用方拿到之后会在锁外读字段，直接返回指针会和 updateSettings 的写入撞车
+// （最坏情况 checkPassword 读到新的 salt + 旧的 hash，正确口令被拒）。
+func (a *app) settings() settings {
 	<-a.mu
-	s := a.cfg
+	s := *a.cfg
 	a.mu <- struct{}{}
 	return s
 }
@@ -280,6 +291,16 @@ func (a *app) listenAddr() string {
 		return a.addrFlag
 	}
 	return fmt.Sprintf("0.0.0.0:%d", a.settings().Port)
+}
+
+// isLoopback 判断请求是否来自本机（首次设置口令时，本机操作不需要额外证明）。
+func isLoopback(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	host = strings.TrimPrefix(strings.TrimSpace(host), "::ffff:")
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }
 
 // ---------- 通用响应 ----------
@@ -461,6 +482,10 @@ func (a *app) handleState(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSetup 首次设置管理员口令；已设置过就拒绝。
+//
+// 这是唯一一个「没有口令也能写」的入口，而服务默认监听 0.0.0.0，
+// 所以必须证明身份：要么从本机访问（SSH 隧道 / 服务器上直接开），
+// 要么带上启动时打到日志里的设置码。否则谁先连上端口，谁就能把服务端变成自己的。
 func (a *app) handleSetup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use POST"})
@@ -469,6 +494,15 @@ func (a *app) handleSetup(w http.ResponseWriter, r *http.Request) {
 	if a.settings().passwordSet() {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "已经设置过口令了"})
 		return
+	}
+	if !isLoopback(r.RemoteAddr) {
+		token := r.Header.Get("X-Setup-Token")
+		if subtle.ConstantTimeCompare([]byte(token), []byte(a.setupToken)) != 1 {
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error": "首次设置只允许本机访问，或在页面上填入启动日志里的设置码" +
+					"（journalctl -u tianqi-config | grep 首次设置）"})
+			return
+		}
 	}
 	var req struct {
 		User string `json:"user"`
@@ -630,29 +664,46 @@ func (a *app) handleAdminSave(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	var config map[string]interface{}
-	if err := json.Unmarshal(body, &config); err != nil {
+	var incoming map[string]interface{}
+	if err := json.Unmarshal(body, &incoming); err != nil {
 		writeJSON(w, http.StatusBadRequest,
 			map[string]string{"error": "配置不是合法 JSON 对象：" + err.Error()})
 		return
 	}
-	if config == nil {
+	if incoming == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "配置不能是空值"})
 		return
 	}
 
-	oldVersion := 0
+	// 合并到磁盘上已有的配置：请求里没带的键保持原样。
+	// 直接整体替换的话，一次「只改天气 Key」的保存会把万年历/语音 Key 一起抹掉；
+	// App 拿到空值后会把本地已同步的 Key 删掉，等于静默丢 Key。
+	merged := map[string]interface{}{}
 	if raw, readErr := a.readConfig(); readErr == nil {
-		var probe struct {
-			Version int `json:"version"`
+		if err := json.Unmarshal(raw, &merged); err != nil {
+			merged = map[string]interface{}{}
 		}
-		_ = json.Unmarshal(raw, &probe)
-		oldVersion = probe.Version
 	}
-	config["version"] = oldVersion + 1
-	config["updatedAt"] = time.Now().Format(time.RFC3339)
+	for key, value := range incoming {
+		if key == "version" || key == "updatedAt" {
+			continue
+		}
+		merged[key] = value
+	}
+	// 类型校验：四个 Key 必须是字符串，写错了当场报，不要等 App 解析失败才发现
+	if err := validateKeysConfig(merged); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 
-	payload, err := json.MarshalIndent(config, "", "  ")
+	oldVersion := 0
+	if value, ok := merged["version"].(float64); ok {
+		oldVersion = int(value)
+	}
+	merged["version"] = oldVersion + 1
+	merged["updatedAt"] = time.Now().Format(time.RFC3339)
+
+	payload, err := json.MarshalIndent(merged, "", "  ")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -673,6 +724,36 @@ func (a *app) handleAdminSave(w http.ResponseWriter, r *http.Request) {
 		"ok": true, "version": oldVersion + 1, "bytes": len(payload),
 		"stored": stored, "path": a.configPath,
 	})
+}
+
+// validateKeysConfig 检查四个 Key 的类型：写错成数字/数组时直接拒绝，
+// 免得把 App 解析不了的配置存进磁盘（App 那边只会安静地退回缓存，很难查）。
+func validateKeysConfig(cfg map[string]interface{}) error {
+	fields := [][2]string{
+		{"calendar", "key"},
+		{"weather", "host"},
+		{"weather", "key"},
+		{"tts", "key"},
+	}
+	for _, field := range fields {
+		section, name := field[0], field[1]
+		node, ok := cfg[section]
+		if !ok || node == nil {
+			continue
+		}
+		object, ok := node.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("%s 必须是对象", section)
+		}
+		value, exists := object[name]
+		if !exists || value == nil {
+			continue
+		}
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("%s.%s 必须是字符串", section, name)
+		}
+	}
+	return nil
 }
 
 // fingerprints 读回磁盘上的配置，返回各 Key 的头尾摘要，用于保存后的核对。

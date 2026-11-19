@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -33,6 +34,8 @@ func setupAdmin(t *testing.T, svc *app) func(method, path string, body string) *
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/setup",
 		strings.NewReader(`{"user":"admin","pass":"secret123"}`))
+	// 测试请求的 RemoteAddr 不是回环地址，所以必须带上启动时打印的设置码
+	req.Header.Set("X-Setup-Token", svc.setupToken)
 	rec := httptest.NewRecorder()
 	svc.handleSetup(rec, req)
 	if rec.Code != http.StatusOK {
@@ -398,4 +401,147 @@ func TestAdminTestTTSWithoutKey(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("没填 Key 应 400，实际 %d", rec.Code)
 	}
+}
+
+// 首次设置口令必须能证明身份：公网请求没有设置码就该被拒绝，
+// 否则谁先连上端口，谁就能把服务端变成自己的。
+func TestSetupRequiresProofFromPublicAddress(t *testing.T) {
+	svc := newTestApp(t)
+	body := `{"user":"admin","pass":"secret123"}`
+
+	// 公网地址 + 没有设置码 → 403
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/setup", strings.NewReader(body))
+	req.RemoteAddr = "203.0.113.9:40000"
+	rec := httptest.NewRecorder()
+	svc.handleSetup(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("公网无设置码应 403，实际 %d", rec.Code)
+	}
+
+	// 公网地址 + 错误设置码 → 403
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/setup", strings.NewReader(body))
+	req.RemoteAddr = "203.0.113.9:40000"
+	req.Header.Set("X-Setup-Token", "wrong-token")
+	rec = httptest.NewRecorder()
+	svc.handleSetup(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("错误设置码应 403，实际 %d", rec.Code)
+	}
+
+	// 本机地址 → 直接允许（在服务器上或走 SSH 隧道操作）
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/setup", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:55555"
+	rec = httptest.NewRecorder()
+	svc.handleSetup(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("本机设置应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+
+	// 设过之后再设 → 409，不管从哪来
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/setup", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:55555"
+	rec = httptest.NewRecorder()
+	svc.handleSetup(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("重复设置应 409，实际 %d", rec.Code)
+	}
+}
+
+// 公网地址带上启动日志里的设置码，可以正常完成首次设置。
+func TestSetupAcceptsTokenFromPublicAddress(t *testing.T) {
+	svc := newTestApp(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/setup",
+		strings.NewReader(`{"user":"admin","pass":"secret123"}`))
+	req.RemoteAddr = "203.0.113.9:40000"
+	req.Header.Set("X-Setup-Token", svc.setupToken)
+	rec := httptest.NewRecorder()
+	svc.handleSetup(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("带设置码应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+}
+
+// 只提交一部分配置时，没提交的 Key 必须保留：
+// 整体替换会让 App 把云端空值当成「Key 被删了」，从而清掉本地已同步的 Key。
+func TestAdminSaveMergesInsteadOfReplacing(t *testing.T) {
+	svc := newTestApp(t)
+	withCookie := setupAdmin(t, svc)
+
+	rec := httptest.NewRecorder()
+	svc.handleAdminSave(rec, withCookie(http.MethodPut, "/api/admin/config",
+		`{"weather":{"host":"new.host","key":"new-key"}}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("保存应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+
+	raw, err := os.ReadFile(svc.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved map[string]interface{}
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		t.Fatal(err)
+	}
+	calendar, _ := saved["calendar"].(map[string]interface{})
+	if calendar["key"] != "juhe" {
+		t.Fatalf("没提交的万年历 Key 丢了：%v", saved)
+	}
+	tts, _ := saved["tts"].(map[string]interface{})
+	if tts["key"] != "mimo" {
+		t.Fatalf("没提交的语音 Key 丢了：%v", saved)
+	}
+	weather, _ := saved["weather"].(map[string]interface{})
+	if weather["key"] != "new-key" {
+		t.Fatalf("weather = %v", weather)
+	}
+}
+
+// Key 类型写错（数字/数组）应当当场 400，而不是存进磁盘等 App 解析失败。
+func TestAdminSaveRejectsWrongKeyType(t *testing.T) {
+	svc := newTestApp(t)
+	withCookie := setupAdmin(t, svc)
+
+	rec := httptest.NewRecorder()
+	svc.handleAdminSave(rec, withCookie(http.MethodPut, "/api/admin/config",
+		`{"calendar":{"key":123}}`))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("类型不对应 400，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+
+	raw, err := os.ReadFile(svc.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"juhe"`) {
+		t.Fatalf("校验失败时不该动磁盘：%s", raw)
+	}
+}
+
+// settings() 必须返回值快照：并发读写时不能看到写了一半的字段（go test -race 会报）。
+func TestSettingsSnapshotIsRaceFree(t *testing.T) {
+	svc := newTestApp(t)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			s := svc.settings()
+			if s.AdminUser == "" && s.Port == 0 && s.AppToken == "" {
+				t.Errorf("读到空配置")
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			if err := svc.updateSettings(func(s *settings) {
+				s.AppToken = randomHex(8)
+			}); err != nil {
+				t.Errorf("updateSettings: %v", err)
+				return
+			}
+		}
+	}()
+	wg.Wait()
 }
