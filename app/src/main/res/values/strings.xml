@@ -61,7 +61,6 @@
     <string name="keys_failed">拉取 Key 失败：%1$s</string>
     <string name="keys_source_none">Key 来源：本地（还没同步过云端 Key）</string>
     <string name="keys_summary">Key 来源：云端 · v%1$d · 同步于 %2$s</string>
-    <string name="voice_disabled">语音播报已在云端关闭</string>
     <string name="voice_tap_lunar">点击播报农历</string>
     <string name="voice_synthesizing">正在生成语音…</string>
     <string name="voice_no_data">还没有数据，先下拉刷新一次</string>
