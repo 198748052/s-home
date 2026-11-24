@@ -31,6 +31,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -65,6 +66,10 @@ type settings struct {
 	AdminHash     string `json:"adminHash"`
 	AppToken      string `json:"appToken"`
 	SessionSecret string `json:"sessionSecret"`
+	// UpdateRepo 是 GitHub 发布仓库（owner/repo）。留空表示不启用在线更新。
+	UpdateRepo string `json:"updateRepo"`
+	// UpdateAPIBase 是 GitHub API 地址，默认官方；国内可换成镜像。
+	UpdateAPIBase string `json:"updateApiBase"`
 }
 
 func (s settings) passwordSet() bool {
@@ -77,6 +82,7 @@ func defaultSettings(port int) *settings {
 		AdminUser:     "admin",
 		AppToken:      randomHex(24),
 		SessionSecret: randomHex(32),
+		UpdateAPIBase: defaultUpdateAPIBase,
 	}
 }
 
@@ -108,6 +114,9 @@ func loadSettings(path string, port int) (*settings, error) {
 	}
 	if s.SessionSecret == "" {
 		s.SessionSecret = randomHex(32)
+	}
+	if s.UpdateAPIBase == "" {
+		s.UpdateAPIBase = defaultUpdateAPIBase
 	}
 	return &s, nil
 }
@@ -244,6 +253,8 @@ type app struct {
 	setupToken string
 	// restart 默认是「退出进程，让 systemd 拉起来」；测试里换成空实现
 	restart func()
+	// updateMu 保证同一时间只有一个更新流程，避免并发替换二进制。
+	updateMu sync.Mutex
 }
 
 func newApp(configPath, dataDir, addrFlag string, port int) (*app, error) {
@@ -437,7 +448,9 @@ func (a *app) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	raw, err := a.readConfig()
-	body := map[string]interface{}{"ok": err == nil, "port": a.settings().Port}
+	body := map[string]interface{}{
+		"ok": err == nil, "port": a.settings().Port, "serverVersion": version,
+	}
 	if err != nil {
 		body["error"] = err.Error()
 		writeJSON(w, http.StatusInternalServerError, body)
@@ -471,9 +484,12 @@ func (a *app) handleState(w http.ResponseWriter, r *http.Request) {
 		"port":          s.Port,
 		"publicBaseUrl": s.PublicBaseURL,
 		"adminUser":     s.AdminUser,
+		"serverVersion": version,
 	}
 	if loggedIn {
 		body["appToken"] = s.AppToken
+		body["updateRepo"] = s.UpdateRepo
+		body["updateApiBase"] = s.UpdateAPIBase
 		if s.PublicBaseURL != "" {
 			body["configUrl"] = strings.TrimRight(s.PublicBaseURL, "/") + "/api/config"
 		}
@@ -575,11 +591,13 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Port          *int   `json:"port"`
-		PublicBaseURL string `json:"publicBaseUrl"`
-		AdminUser     string `json:"adminUser"`
-		NewPass       string `json:"newPass"`
-		RotateToken   bool   `json:"rotateToken"`
+		Port          *int    `json:"port"`
+		PublicBaseURL string  `json:"publicBaseUrl"`
+		AdminUser     string  `json:"adminUser"`
+		NewPass       string  `json:"newPass"`
+		RotateToken   bool    `json:"rotateToken"`
+		UpdateRepo    *string `json:"updateRepo"`
+		UpdateAPIBase *string `json:"updateApiBase"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请求不是合法 JSON"})
@@ -590,6 +608,24 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if req.NewPass != "" && len(req.NewPass) < 6 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "新口令至少 6 位"})
 		return
+	}
+	var updateRepo, updateAPIBase string
+	if req.UpdateRepo != nil {
+		updateRepo = strings.TrimSpace(*req.UpdateRepo)
+		if updateRepo != "" && !validUpdateRepo(updateRepo) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "更新仓库格式应为 owner/repo"})
+			return
+		}
+	}
+	if req.UpdateAPIBase != nil {
+		updateAPIBase = strings.TrimRight(strings.TrimSpace(*req.UpdateAPIBase), "/")
+		if updateAPIBase == "" {
+			updateAPIBase = defaultUpdateAPIBase
+		}
+		if !strings.HasPrefix(updateAPIBase, "https://") && !strings.HasPrefix(updateAPIBase, "http://") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "更新 API 地址必须以 http:// 或 https:// 开头"})
+			return
+		}
 	}
 
 	oldPort := a.settings().Port
@@ -609,6 +645,12 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if req.RotateToken {
 			s.AppToken = randomHex(24)
 			newToken = s.AppToken
+		}
+		if req.UpdateRepo != nil {
+			s.UpdateRepo = updateRepo
+		}
+		if req.UpdateAPIBase != nil {
+			s.UpdateAPIBase = updateAPIBase
 		}
 	})
 	if err != nil {
@@ -957,6 +999,8 @@ func main() {
 	mux.HandleFunc("/api/admin/logout", svc.handleLogout)
 	mux.HandleFunc("/api/admin/settings", svc.handleSettings)
 	mux.HandleFunc("/api/admin/restart", svc.handleRestart)
+	mux.HandleFunc("/api/admin/update/check", svc.handleUpdateCheck)
+	mux.HandleFunc("/api/admin/update/apply", svc.handleUpdateApply)
 	mux.HandleFunc("/api/admin/config", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut || r.Method == http.MethodPost {
 			svc.handleAdminSave(w, r)
@@ -974,8 +1018,9 @@ func main() {
 		Handler:           logRequests(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		// 在线更新要先下载并校验二进制再回包，给足写超时余量。
+		WriteTimeout: 180 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {

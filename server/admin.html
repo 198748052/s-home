@@ -152,6 +152,40 @@
       </div>
       <div class="hint" id="urlHint"></div>
     </section>
+
+    <section>
+      <h2>在线更新</h2>
+      <div class="grid">
+        <div class="full">
+          <label>当前版本</label>
+          <div class="row">
+            <span class="mono" id="serverVersion">-</span>
+            <span class="hint" id="updateState" style="margin:0"></span>
+          </div>
+        </div>
+        <div>
+          <label>更新仓库（owner/repo）</label>
+          <input type="text" id="updateRepo" placeholder="yourname/s-home">
+        </div>
+        <div>
+          <label>GitHub API 地址（留空用官方）</label>
+          <input type="text" id="updateApiBase" class="mono" placeholder="https://api.github.com">
+        </div>
+        <div class="full">
+          <div class="row">
+            <button class="soft" id="saveUpdate">保存更新设置</button>
+            <button class="soft" id="checkUpdate">检查更新</button>
+            <button class="primary" id="applyUpdate" disabled>立即更新</button>
+          </div>
+        </div>
+      </div>
+      <div class="hint" id="updateHint">
+        从 GitHub Releases 拉取与当前架构匹配的二进制，校验 SHA-256 后替换并重启。
+        国内主机直连 GitHub 可能超时，可把 API 地址换成镜像。
+      </div>
+      <pre class="mono hidden" id="updateNotes"
+           style="white-space:pre-wrap;background:var(--bg);padding:10px;border-radius:8px;max-height:220px;overflow:auto"></pre>
+    </section>
   </div>
 </main>
 
@@ -159,6 +193,7 @@
 const $ = (id) => document.getElementById(id);
 let config = {};
 let state = {};
+let pendingUpdate = null;
 
 function setStatus(message, kind) {
   const box = $('status');
@@ -235,6 +270,9 @@ async function loadState() {
   $('publicBaseUrl').value = state.publicBaseUrl || '';
   $('adminUser').value = state.adminUser || 'admin';
   $('appToken').value = state.appToken || '';
+  $('serverVersion').textContent = state.serverVersion || 'dev';
+  $('updateRepo').value = state.updateRepo || '';
+  $('updateApiBase').value = state.updateApiBase || '';
   $('urlHint').textContent = state.publicBaseUrl
     ? ('App 里的 Key 接口：' + state.publicBaseUrl.replace(/\/$/, '') + '/api/keys')
     : '填上对外域名后，这里会显示 App 要用的 Key 接口地址';
@@ -338,6 +376,8 @@ async function saveSettings() {
     adminUser: $('adminUser').value,
     newPass: $('newPass').value,
     rotateToken: $('rotateToken').dataset.armed === '1',
+    updateRepo: $('updateRepo').value,
+    updateApiBase: $('updateApiBase').value,
   };
   try {
     const data = await api('/api/admin/settings', {
@@ -387,6 +427,84 @@ async function testTts() {
   }
 }
 
+function renderUpdate(info) {
+  pendingUpdate = info;
+  const notes = $('updateNotes');
+  $('updateState').textContent = info
+    ? ('最新 ' + info.latest + (info.available ? ' · 可更新' : ' · 已是最新'))
+    : '';
+  $('applyUpdate').disabled = !(info && info.available && info.assetUrl);
+  if (info && info.notes) {
+    notes.textContent = info.notes;
+    notes.classList.remove('hidden');
+  } else {
+    notes.textContent = '';
+    notes.classList.add('hidden');
+  }
+  if (info && info.available && !info.assetUrl) {
+    $('updateState').textContent += '（该版本无本机架构安装包）';
+  }
+}
+
+async function saveUpdateSettings() {
+  $('saveUpdate').disabled = true;
+  try {
+    await api('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        updateRepo: $('updateRepo').value,
+        updateApiBase: $('updateApiBase').value,
+      }),
+    });
+    setStatus('更新设置已保存', 'ok');
+    await loadState();
+  } catch (err) {
+    setStatus('保存失败：' + err.message, 'err');
+  } finally {
+    $('saveUpdate').disabled = false;
+  }
+}
+
+async function checkUpdate() {
+  $('checkUpdate').disabled = true;
+  renderUpdate(null);
+  $('updateState').textContent = '检查中…';
+  try {
+    const info = await api('/api/admin/update/check');
+    renderUpdate(info);
+    setStatus(info.available
+      ? ('发现新版本 ' + info.latest + '（当前 ' + info.current + '）')
+      : ('已是最新版本 ' + info.current), 'ok');
+  } catch (err) {
+    $('updateState').textContent = '';
+    setStatus('检查更新失败：' + err.message, 'err');
+  } finally {
+    $('checkUpdate').disabled = false;
+  }
+}
+
+async function applyUpdate() {
+  if (!pendingUpdate || !pendingUpdate.available) return;
+  if (!confirm('更新到 ' + pendingUpdate.latest + ' 并重启服务？')) return;
+  $('applyUpdate').disabled = true;
+  $('checkUpdate').disabled = true;
+  setStatus('正在下载并校验 ' + pendingUpdate.latest + '…');
+  try {
+    const data = await api('/api/admin/update/apply', { method: 'POST' });
+    if (!data.applied) {
+      setStatus('已是最新版本，无需更新', 'ok');
+      return;
+    }
+    setStatus('更新已应用，服务正在重启，页面稍后自动刷新…', 'ok');
+    setTimeout(() => location.reload(), 5000);
+  } catch (err) {
+    setStatus('更新失败：' + err.message, 'err');
+    $('applyUpdate').disabled = false;
+    $('checkUpdate').disabled = false;
+  }
+}
+
 $('setupBtn').addEventListener('click', doSetup);
 $('loginBtn').addEventListener('click', doLogin);
 $('loginPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
@@ -396,6 +514,9 @@ $('reload').addEventListener('click', enter);
 $('test').addEventListener('click', testTts);
 $('saveSettings').addEventListener('click', saveSettings);
 $('restart').addEventListener('click', restartService);
+$('saveUpdate').addEventListener('click', saveUpdateSettings);
+$('checkUpdate').addEventListener('click', checkUpdate);
+$('applyUpdate').addEventListener('click', applyUpdate);
 $('rotateToken').addEventListener('click', () => {
   const btn = $('rotateToken');
   const armed = btn.dataset.armed === '1';

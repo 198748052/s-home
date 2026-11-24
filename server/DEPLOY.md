@@ -112,6 +112,29 @@ server {
 
 ---
 
+# 在线更新（GitHub Releases）
+
+构建在 GitHub Actions 的 runner 上完成，服务器不装 Go、不编译：
+
+1. 本地打完 tag 推送：`git tag v3.3.0 && git push origin v3.3.0`。
+2. `.github/workflows/release.yml` 自动交叉编译 `linux/amd64` + `linux/arm64`，
+   注入版本号，生成 `SHA256SUMS.txt`，发布到 GitHub Releases。
+3. 打开管理页「在线更新」，填更新仓库 `owner/repo`，保存后点「检查更新」。
+4. 有新版本时点「立即更新」：下载同架构资产 → 校验 SHA-256 → 备份旧二进制 →
+   原子替换 → 退出进程，systemd 按 `Restart=always` 拉起新版本。
+
+注意：
+
+- 更新源只认管理页里配置的仓库，接口仅管理员可用；缺少 `SHA256SUMS.txt`
+  或校验不通过会直接拒绝，旧二进制不受影响。
+- 国内云主机直连 GitHub 常超时。可在「GitHub API 地址」填镜像，或把发布产物
+  同步到自己的对象存储/镜像站后使用对应 API 地址。
+- 回滚：把安装目录里的 `tianqi-config.bak` 覆盖回 `tianqi-config`，再
+  `sudo systemctl restart tianqi-config`。
+- 也可以在管理页看当前版本；`/api/health` 返回 `serverVersion`。
+
+---
+
 # 日常操作
 
 | 要做什么 | 怎么做 |
@@ -119,7 +142,7 @@ server {
 | 换 Key / 换厂商 / 改音色语速 | 管理页改完点「保存配置」 |
 | 改端口 / 改域名 / 改口令 / 轮换令牌 | 管理页「服务设置」→ 保存 |
 | 立刻让 App 生效 | App 设置页点「立即同步配置」 |
-| 升级服务端 | 重跑 `sudo sh /tmp/install-amd64.sh`（配置和口令不动） |
+| 升级服务端 | 管理页「在线更新」检查并更新；或重跑 `sudo sh /tmp/install-amd64.sh`（配置和口令不动） |
 | 配置改坏了 | `/root/data/tianqi/config.json.bak` 是上一版 |
 | 忘了管理口令 | 停服务，删 `/root/data/tianqi/server.json` 里的 `adminHash` 和 `adminSalt` 两行，重启后重新设置（**会保留端口和令牌**；重新设置同样需要日志里的设置码） |
 | 看日志 | `sudo journalctl -u tianqi-config -f` |

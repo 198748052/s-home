@@ -1,13 +1,22 @@
 ﻿# 在 Windows 上交叉编译给 Linux 服务器用的静态二进制（服务器不用装 Go）。
 #   powershell -ExecutionPolicy Bypass -File build.ps1
+#   powershell -ExecutionPolicy Bypass -File build.ps1 -Version v3.3.0
 #
 # 需要本机装 Go（https://golang.google.cn/dl/ 下载 windows-amd64 的 zip 解压即可）。
 param(
-    [string]$GoBin = "go"
+    [string]$GoBin = "go",
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
+
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    try { $Version = (& git describe --tags --always --dirty 2>$null) } catch { $Version = "" }
+    if ([string]::IsNullOrWhiteSpace($Version)) { $Version = "dev" }
+}
+$Version = $Version.Trim()
+Write-Host "version: $Version"
 
 $env:CGO_ENABLED = "0"
 foreach ($arch in @("amd64", "arm64")) {
@@ -16,7 +25,7 @@ foreach ($arch in @("amd64", "arm64")) {
     $out = "dist/tianqi-config-linux-$arch"
     New-Item -ItemType Directory -Force -Path dist | Out-Null
     Write-Host "building linux/$arch ..."
-    & $GoBin build -trimpath -ldflags "-s -w" -o $out .
+    & $GoBin build -trimpath -ldflags "-s -w -X main.version=$Version" -o $out .
     if ($LASTEXITCODE -ne 0) { throw "build failed for linux/$arch" }
 }
 

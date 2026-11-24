@@ -28,14 +28,14 @@ This file records user instructions, preferences, and teachings for reference in
 ## Entries
 
 [Project Knowledge Summary]
-- Date: 2026-11-15
-- Context: Discovered by Agent while setting up the native Android development environment and build pipeline for the local weather app
-- Category: Environment Configuration / Build Methods / Testing Methods
+- Date: 2026-11-24
+- Context: Discovered by Agent while setting up the Android build environment and running the Go key service for the local weather app
+- Category: Environment Configuration / Build Methods / Testing Methods / Operations & Deployment
 - Instructions:
-  - JDK 17 is installed at `/usr/lib/jvm/java-17-openjdk-amd64`; Android SDK at `/opt/android-sdk` (platform-tools, platforms;android-34, build-tools;34.0.0), env vars also exported in `/etc/profile.d/android-sdk.sh`.
+  - JDK 17 at `/usr/lib/jvm/java-17-openjdk-amd64` (installed via apt `openjdk-17-jdk-headless`); Android SDK at `/opt/android-sdk` (cmdline-tools/latest, platform-tools, platforms;android-34, build-tools;34.0.0).
+  - Env vars are exported in `/etc/profile.d/android-sdk.sh`; `local.properties` (gitignored) contains `sdk.dir=/opt/android-sdk`.
   - Build APK: `cd /workspace && JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_HOME=/opt/android-sdk ./gradlew assembleDebug`; output at `app/build/outputs/apk/debug/app-debug.apk`.
-  - Run unit/UI tests: `./gradlew testDebugUnitTest` (Robolectric, no emulator required); the UI test renders a real screenshot to `/tmp/android_ui_screenshot.png`.
-  - The host has no KVM, so the Android emulator cannot run; UI verification relies on Robolectric with `GraphicsMode.NATIVE`.
-  - The environment is headless; Android Studio GUI is not installed.
-  - Lunar calendar code is plain Java and can be verified outside Android: compile `LunarCalendar.java` together with a test class via `javac`/`java`.
-  - Gradle 8.7 is installed at `/opt/gradle/gradle-8.7`; the project also ships a Gradle wrapper.
+  - Run unit/UI tests: `./gradlew testDebugUnitTest` (Robolectric, no emulator); results in `app/build/test-results/testDebugUnitTest/`.
+  - Go key service local dev: `cd server && go run . -config config.json -data /tmp/tianqi-dev -port 8787`; admin page at `/admin` (root redirects there), health at `/api/health`.
+  - The host has no KVM, so the Android emulator cannot run; UI verification relies on Robolectric.
+  - Gradle 8.7 comes from the project wrapper (auto-downloaded on first build); Android Studio GUI is not installed.

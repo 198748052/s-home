@@ -38,6 +38,8 @@
 | GET/PUT | `/api/admin/config` | 会话或 Basic | 读 / 保存 Key（version 自增、写 `.bak`） |
 | POST | `/api/admin/settings` | 会话或 Basic | 端口、对外域名、管理员口令、App 令牌 |
 | POST | `/api/admin/restart` | 会话或 Basic | 重启（退出进程，systemd 拉起） |
+| GET | `/api/admin/update/check` | 会话或 Basic | 查询 GitHub Releases 最新版本与对应架构资产 |
+| POST | `/api/admin/update/apply` | 会话或 Basic | 下载并校验 SHA-256 后原子替换二进制，再重启 |
 | POST | `/api/admin/test-tts` | 会话或 Basic | 用当前语音 Key 真打一次 MiMo，看通不通 |
 
 Key 的数据结构（`config.json`）：
@@ -65,6 +67,19 @@ sudo sh /tmp/install-amd64.sh          # 装到 /root/data/tianqi，端口 8787
 
 浏览器打开 `http://服务器IP:8787/admin`：先设管理员口令，然后填四个 Key、点「保存 Key」。
 完整步骤与排错见 **[DEPLOY.md](DEPLOY.md)**。
+
+## 在线更新（GitHub Releases）
+
+构建在 GitHub Actions 上完成，服务器只下载预编译产物，不装 Go：
+
+1. 打 tag 触发 `.github/workflows/release.yml`：交叉编译 `linux/amd64` + `linux/arm64`，
+   注入版本号（`-X main.version=$TAG`），生成 `SHA256SUMS.txt`，发布到 GitHub Releases。
+2. 管理页「在线更新」里填 `owner/repo`（可选换 GitHub API 镜像地址），点「检查更新」。
+3. 点「立即更新」：服务端下载同架构资产 → 校验 SHA-256 → 备份旧二进制为 `.bak` →
+   原子替换 → 退出进程让 systemd 拉起新版本。
+
+安全约束：只认配置里的仓库，不接受任意 URL；没有 `SHA256SUMS.txt` 或校验不通过一律拒绝；
+接口仅管理员可用。国内主机直连 GitHub 可能超时，可把 API 地址换成镜像或自建发布源。
 
 ## App 侧要配的两个值
 
