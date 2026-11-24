@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
@@ -29,11 +30,68 @@ import org.robolectric.shadows.ShadowActivity;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Calendar;
+import java.util.concurrent.Callable;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34, qualifiers = "w360dp-h640dp-xhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 public class MainActivityTest {
+
+    /** 首页打开就会自动拉云端 Key：默认指到本地一个拒绝连接的端口，避免测试打到线上。 */
+    @Before
+    public void useLocalKeysUrl() {
+        RuntimeEnvironment.getApplication()
+                .getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(AppSettings.KEY_KEYS_URL_MIGRATED, true)
+                .putString("keys_url", "http://127.0.0.1:1/api/keys")
+                .commit();
+    }
+
+    /** 每次打开 App 自动拉一次云端 Key，并上报设备信息。 */
+    @Test
+    public void openingAppPullsCloudKeysAutomatically() throws Exception {
+        StubHttpServer server = StubHttpServer.start(200, "{"
+                + "\"version\":9,"
+                + "\"weather\":{\"host\":\"cloud.re.qweatherapi.com\",\"key\":\"cloud-qw\"},"
+                + "\"tts\":{\"key\":\"cloud-tts\"}"
+                + "}", "\"v9\"");
+        try {
+            Context context = RuntimeEnvironment.getApplication();
+            context.getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                    .edit().clear()
+                    .putBoolean(AppSettings.KEY_KEYS_URL_MIGRATED, true)
+                    .putString("keys_url", server.baseUrl() + "/api/keys")
+                    .commit();
+
+            Robolectric.buildActivity(MainActivity.class).setup().get();
+
+            AppSettings settings = new AppSettings(context);
+            waitUntil(new Callable<Boolean>() {
+                @Override
+                public Boolean call() {
+                    return "cloud-qw".equals(settings.getWeatherKey());
+                }
+            });
+            assertEquals("cloud-qw", settings.getWeatherKey());
+            assertEquals("cloud-tts", settings.getTtsKey());
+            assertEquals(DeviceInfo.id(context), server.header("X-Device-Id"));
+        } finally {
+            server.close();
+        }
+    }
+
+    private static void waitUntil(Callable<Boolean> condition) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            if (condition.call()) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("等待自动拉取 Key 超时");
+    }
 
     @Test
     public void screenRendersWithoutOverflow() throws Exception {

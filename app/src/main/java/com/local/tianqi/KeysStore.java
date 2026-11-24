@@ -257,9 +257,15 @@ public final class KeysStore {
         if (!etag.isEmpty()) {
             headers.put("If-None-Match", etag);
         }
-        String token = settings.getKeysToken().trim();
-        if (!token.isEmpty()) {
-            headers.put("X-Config-Token", token);
+        // 服务端靠这几个头统计「有几台设备对接过」，不再校验令牌
+        headers.put("X-Device-Id", DeviceInfo.id(context));
+        String name = DeviceInfo.name();
+        if (!name.isEmpty()) {
+            headers.put("X-Device-Name", name);
+        }
+        String version = DeviceInfo.version(context);
+        if (!version.isEmpty()) {
+            headers.put("X-App-Version", version);
         }
         return headers;
     }

@@ -38,6 +38,26 @@ jobs:
           sha256sum tianqi-config-linux-amd64 tianqi-config-linux-arm64 > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Test app
+        run: ./gradlew testDebugUnitTest
+
+      - name: Build APK
+        run: ./gradlew assembleDebug
+
+      - name: Package APK
+        run: |
+          mkdir -p dist-apk
+          cp app/build/outputs/apk/debug/app-debug.apk "dist-apk/s-home-${GITHUB_REF_NAME}.apk"
+          cd dist-apk
+          sha256sum "s-home-${GITHUB_REF_NAME}.apk" > SHA256SUMS-apk.txt
+          cat SHA256SUMS-apk.txt
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -45,4 +65,6 @@ jobs:
             server/dist/tianqi-config-linux-amd64
             server/dist/tianqi-config-linux-arm64
             server/dist/SHA256SUMS.txt
+            dist-apk/s-home-${{ github.ref_name }}.apk
+            dist-apk/SHA256SUMS-apk.txt
           generate_release_notes: true

@@ -176,7 +176,7 @@ echo "进去之后可以在网页里："
 echo "  · 填和风天气 / 聚合数据 / 语音合成的 Key"
 echo "  · 换语音厂商（MiMo / OpenAI 兼容 / 自定义接口）"
 echo "  · 改端口、填对外域名、改管理员口令"
-echo "  · 复制 App 访问令牌（填进 App 的 CONFIG_TOKEN）"
+echo "  · 查看「设备管理」：有几台设备对接过"
 echo "  · 点「测试语音合成」确认 Key 通不通"
 echo
 echo "反代自己做即可，服务只监听 0.0.0.0:$ACTUAL_PORT。"

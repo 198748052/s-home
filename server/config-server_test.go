@@ -93,22 +93,17 @@ func TestFirstRunRequiresSetupThenLogin(t *testing.T) {
 	}
 }
 
-func TestKeysEndpointRequiresTokenAndSupportsETag(t *testing.T) {
+func TestKeysEndpointNeedsNoTokenAndRecordsDevice(t *testing.T) {
 	svc := newTestApp(t)
-	token := svc.settings().AppToken
-
-	rec := httptest.NewRecorder()
-	svc.handleConfig(rec, httptest.NewRequest(http.MethodGet, "/api/keys", nil))
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("没有令牌应 401，实际 %d", rec.Code)
-	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
-	req.Header.Set("X-Config-Token", token)
-	rec = httptest.NewRecorder()
+	req.Header.Set("X-Device-Id", "device-abc")
+	req.Header.Set("X-Device-Name", "Pixel 8")
+	req.Header.Set("X-App-Version", "3.3 (26)")
+	rec := httptest.NewRecorder()
 	svc.handleConfig(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("带令牌应 200，实际 %d", rec.Code)
+		t.Fatalf("不带令牌也应 200，实际 %d", rec.Code)
 	}
 	etag := rec.Header().Get("ETag")
 	if etag == "" {
@@ -123,13 +118,22 @@ func TestKeysEndpointRequiresTokenAndSupportsETag(t *testing.T) {
 		t.Fatalf("响应里应包含 Key：%s", body)
 	}
 
+	devices := svc.devices.list()
+	if len(devices) != 1 || devices[0].ID != "device-abc" ||
+		devices[0].Name != "Pixel 8" || devices[0].Version != "3.3 (26)" {
+		t.Fatalf("设备没记录对：%+v", devices)
+	}
+
 	req2 := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
-	req2.Header.Set("X-Config-Token", token)
+	req2.Header.Set("X-Device-Id", "device-abc")
 	req2.Header.Set("If-None-Match", etag)
 	rec2 := httptest.NewRecorder()
 	svc.handleConfig(rec2, req2)
 	if rec2.Code != http.StatusNotModified {
 		t.Fatalf("命中 ETag 应 304，实际 %d", rec2.Code)
+	}
+	if got := svc.devices.list()[0].Requests; got != 2 {
+		t.Fatalf("304 也应算一次设备上报，实际 %d", got)
 	}
 }
 
@@ -182,13 +186,12 @@ func TestAdminSaveRequiresAuthAndValidJSON(t *testing.T) {
 	}
 }
 
-func TestSettingsSaveChangesPortUrlTokenAndPassword(t *testing.T) {
+func TestSettingsSaveChangesPortUrlAndPassword(t *testing.T) {
 	svc := newTestApp(t)
 	withCookie := setupAdmin(t, svc)
-	oldToken := svc.settings().AppToken
 
 	body := `{"port":9000,"publicBaseUrl":"https://tq.example.com/","adminUser":"boss",
-	          "newPass":"newsecret","rotateToken":true}`
+	          "newPass":"newsecret"}`
 	rec := httptest.NewRecorder()
 	svc.handleSettings(rec, withCookie(http.MethodPost, "/api/admin/settings", body))
 	if rec.Code != http.StatusOK {
@@ -204,7 +207,7 @@ func TestSettingsSaveChangesPortUrlTokenAndPassword(t *testing.T) {
 
 	s := svc.settings()
 	if s.Port != 9000 || s.PublicBaseURL != "https://tq.example.com" ||
-		s.AdminUser != "boss" || s.AppToken == oldToken {
+		s.AdminUser != "boss" {
 		t.Fatalf("settings = %+v", s)
 	}
 
@@ -526,7 +529,7 @@ func TestSettingsSnapshotIsRaceFree(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
 			s := svc.settings()
-			if s.AdminUser == "" && s.Port == 0 && s.AppToken == "" {
+			if s.AdminUser == "" && s.Port == 0 && s.SessionSecret == "" {
 				t.Errorf("读到空配置")
 				return
 			}
@@ -536,7 +539,7 @@ func TestSettingsSnapshotIsRaceFree(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 50; i++ {
 			if err := svc.updateSettings(func(s *settings) {
-				s.AppToken = randomHex(8)
+				s.PublicBaseURL = randomHex(8)
 			}); err != nil {
 				t.Errorf("updateSettings: %v", err)
 				return
@@ -563,5 +566,47 @@ func TestAdminSettingsRejectsShortPassword(t *testing.T) {
 		strings.NewReader(`{"user":"admin","pass":"secret123"}`)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("旧口令应仍然有效，实际 %d", rec.Code)
+	}
+}
+
+func TestAdminDevicesRequiresAuthAndListsDevices(t *testing.T) {
+	svc := newTestApp(t)
+
+	rec := httptest.NewRecorder()
+	svc.handleDevices(rec, httptest.NewRequest(http.MethodGet, "/api/admin/devices", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("没有会话应 401，实际 %d", rec.Code)
+	}
+
+	withCookie := setupAdmin(t, svc)
+	for _, id := range []string{"device-1", "device-2"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/keys", nil)
+		req.Header.Set("X-Device-Id", id)
+		req.Header.Set("X-Device-Name", "手机 "+id)
+		req.Header.Set("X-App-Version", "3.3")
+		rec = httptest.NewRecorder()
+		svc.handleConfig(rec, req)
+	}
+	// 没有设备 ID 的老版本请求不计数
+	svc.handleConfig(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/api/keys", nil))
+
+	rec = httptest.NewRecorder()
+	svc.handleDevices(rec, withCookie(http.MethodGet, "/api/admin/devices", ""))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("设备列表应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Count   int      `json:"count"`
+		Devices []device `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Count != 2 || len(body.Devices) != 2 {
+		t.Fatalf("设备数量不对：%+v", body)
+	}
+	if body.Devices[0].ID == "" || body.Devices[0].Name == "" {
+		t.Fatalf("设备信息不完整：%+v", body.Devices[0])
 	}
 }

@@ -44,11 +44,33 @@ public class KeysStoreTest {
     }
 
     @Test
-    public void withoutUrlUsesLocalKeys() {
+    public void withoutManualUrlUsesBuiltInAddress() {
+        assertEquals("http://home.topsygf.cn/api/keys", settings.keysStore().url());
+    }
+
+    @Test
+    public void failedFetchWithoutCacheKeepsEmptyKeys() {
+        settings.setKeysUrl("http://127.0.0.1:1/api/keys");
         Result result = refresh(settings, true);
         assertFalse(result.changed);
         assertTrue(result.keys.isEmpty());
         assertEquals("", settings.getWeatherKey());
+    }
+
+    /** 旧版本手填的地址升级后清掉一次，改用内置地址；之后手填的仍然生效。 */
+    @Test
+    public void legacyManualUrlIsReplacedOnce() {
+        context.getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                .edit().clear()
+                .putString("keys_url", "http://old.example.com/api/keys")
+                .commit();
+
+        AppSettings upgraded = new AppSettings(context);
+        assertEquals("", upgraded.getKeysUrl());
+        assertEquals("http://home.topsygf.cn/api/keys", upgraded.keysStore().url());
+
+        upgraded.setKeysUrl("http://custom.example.com/api/keys");
+        assertEquals("http://custom.example.com/api/keys", upgraded.keysStore().url());
     }
 
     @Test
@@ -213,15 +235,17 @@ public class KeysStoreTest {
         assertEquals("", KeysStore.normalizeUrl(""));
     }
 
+    /** 服务端不再校验令牌，改为靠设备信息统计对接设备。 */
     @Test
-    public void tokenFromSettingsIsSentAsHeader() throws Exception {
+    public void deviceInfoIsSentAsHeaders() throws Exception {
         StubHttpServer server = StubHttpServer.start(200, KEYS_JSON, "\"v5\"");
         try {
             settings.setKeysUrl(server.baseUrl() + "/api/keys");
-            settings.setKeysToken("  token-from-settings  ");
-            assertEquals("token-from-settings", settings.getKeysToken());
             refresh(settings, true);
-            assertEquals("token-from-settings", server.header("X-Config-Token"));
+            assertEquals(DeviceInfo.id(context), server.header("X-Device-Id"));
+            assertEquals(DeviceInfo.name(), server.header("X-Device-Name"));
+            assertEquals(DeviceInfo.version(context), server.header("X-App-Version"));
+            assertEquals("", server.header("X-Config-Token"));
         } finally {
             server.close();
         }

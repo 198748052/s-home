@@ -177,8 +177,6 @@ public class SettingsActivityTest {
             Activity activity = Robolectric.buildActivity(SettingsActivity.class).setup().get();
             EditText url = activity.findViewById(R.id.etConfigUrl);
             url.setText(server.baseUrl() + "/api/config");
-            EditText token = activity.findViewById(R.id.etConfigToken);
-            token.setText("page-token");
             activity.findViewById(R.id.btnConfigSync).performClick();
 
             TextView info = activity.findViewById(R.id.tvConfigInfo);
@@ -193,9 +191,6 @@ public class SettingsActivityTest {
             assertEquals("cloud-key", settings.getWeatherKey());
             assertEquals("cloud.re.qweatherapi.com", settings.getWeatherHost());
             assertEquals("cloud-tts", settings.getTtsKey());
-            // 令牌从设置页读，并真的带到请求头
-            assertEquals("page-token", settings.getKeysToken());
-            assertEquals("page-token", server.header("X-Config-Token"));
             // 云端值应该直接写进本地输入框，用户看到的就是当前在用的
             EditText weatherKey = activity.findViewById(R.id.etWeatherKey);
             EditText weatherHost = activity.findViewById(R.id.etWeatherHost);

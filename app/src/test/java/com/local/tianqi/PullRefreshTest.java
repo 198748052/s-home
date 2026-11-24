@@ -5,21 +5,35 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Activity;
+import android.content.Context;
 import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.TextView;
 
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
 /** 下拉刷新：拉到阈值才触发，收起时提示条归零。 */
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 34, qualifiers = "w360dp-h640dp-xhdpi")
 public class PullRefreshTest {
+
+    /** 首页会自动拉云端 Key：指到本地拒绝连接的端口，避免测试打到线上。 */
+    @Before
+    public void useLocalKeysUrl() {
+        RuntimeEnvironment.getApplication()
+                .getSharedPreferences("tianqi_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(AppSettings.KEY_KEYS_URL_MIGRATED, true)
+                .putString("keys_url", "http://127.0.0.1:1/api/keys")
+                .commit();
+    }
 
     private Activity activity;
     private PullRefreshScrollView scroll;

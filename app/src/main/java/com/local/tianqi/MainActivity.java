@@ -102,8 +102,13 @@ public class MainActivity extends Activity {
 
         lastLocationMode = settings.isLocationMode();
         ensureLocationPermission();
+        // 先把上次缓存的 Key 落到本地，本次拉取失败也不影响使用旧 Key
+        settings.keysStore().current();
         render();
-        syncConfig();
+        // 只在真正打开 App 时拉一次；旋转屏幕等重建不重复请求
+        if (savedInstanceState == null) {
+            syncConfig();
+        }
     }
 
     @Override
@@ -140,11 +145,11 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 启动时同步云端配置：接口地址、Key、TTS 模型/音色/语速都从这里来，
-     * 云端换了配置就不用发版。只有内容真的变了才重新取数据，避免重复请求。
+     * 启动时同步云端配置：每次打开 App 都强制回源拉一次，
+     * 拉不到就继续用上次缓存的 Key。只有内容真的变了才重新取数据，避免重复请求。
      */
     private void syncConfig() {
-        settings.keysStore().refresh(false, new KeysStore.Callback() {
+        settings.keysStore().refresh(true, new KeysStore.Callback() {
             @Override
             public void onKeys(CloudKeys keys, boolean changed, String status) {
                 if (!changed || isFinishing() || isDestroyed()) {

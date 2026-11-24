@@ -44,6 +44,10 @@
   .panel p { color:var(--dim); font-size:13.5px; margin:0 0 16px; }
   .panel .grid { grid-template-columns:1fr; }
   .hidden { display:none !important; }
+  .device { border-top:1px solid var(--line); padding:10px 0; }
+  .device:first-child { border-top:0; }
+  .device .name { font-weight:600; }
+  .device .meta { color:var(--dim); font-size:12.5px; margin-top:2px; }
 </style>
 </head>
 <body>
@@ -117,6 +121,15 @@
     </section>
 
     <section>
+      <h2>设备管理 <span class="hint" id="deviceCount" style="margin:0"></span></h2>
+      <div class="row">
+        <button class="soft" id="reloadDevices">刷新设备</button>
+        <span class="hint" style="margin:0">App 打开时会自动上报设备信息，这里只展示最近对接过的设备。</span>
+      </div>
+      <div id="deviceList" style="margin-top:10px"></div>
+    </section>
+
+    <section>
       <h2>服务设置</h2>
       <div class="grid">
         <div>
@@ -134,13 +147,6 @@
         <div>
           <label>新口令（留空表示不改）</label>
           <input type="password" id="newPass" placeholder="至少 6 位">
-        </div>
-        <div class="full">
-          <label>App 访问令牌（App 里的「访问令牌」填这个）</label>
-          <div class="row">
-            <input type="text" id="appToken" class="mono" readonly>
-            <button class="soft" id="rotateToken">轮换</button>
-          </div>
         </div>
         <div class="full">
           <div class="row">
@@ -269,7 +275,6 @@ async function loadState() {
   $('port').value = state.port;
   $('publicBaseUrl').value = state.publicBaseUrl || '';
   $('adminUser').value = state.adminUser || 'admin';
-  $('appToken').value = state.appToken || '';
   $('serverVersion').textContent = state.serverVersion || 'dev';
   $('updateRepo').value = state.updateRepo || '';
   $('updateApiBase').value = state.updateApiBase || '';
@@ -286,9 +291,59 @@ async function loadConfig() {
     ' · 端口 ' + state.port + (config.updatedAt ? ' · ' + config.updatedAt : '');
 }
 
+function renderDevices(data) {
+  const count = data && typeof data.count === 'number' ? data.count : 0;
+  $('deviceCount').textContent = '共 ' + count + ' 台';
+  const box = $('deviceList');
+  box.textContent = '';
+  const devices = (data && data.devices) || [];
+  if (!devices.length) {
+    const empty = document.createElement('div');
+    empty.className = 'hint';
+    empty.textContent = '还没有设备对接过。打开 App 后会在这里出现。';
+    box.appendChild(empty);
+    return;
+  }
+  devices.forEach((d) => {
+    const row = document.createElement('div');
+    row.className = 'device';
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = d.name || '未知设备';
+    const meta = document.createElement('div');
+    meta.className = 'meta mono';
+    const parts = [
+      '版本 ' + (d.version || '-'),
+      '最近 ' + (d.lastSeen || '-'),
+      '累计 ' + (d.requests || 0) + ' 次',
+    ];
+    if (d.ip) parts.push('IP ' + d.ip);
+    meta.textContent = parts.join(' · ');
+    const id = document.createElement('div');
+    id.className = 'meta mono';
+    id.textContent = 'ID ' + (d.id || '-');
+    row.appendChild(name);
+    row.appendChild(meta);
+    row.appendChild(id);
+    box.appendChild(row);
+  });
+}
+
+async function loadDevices() {
+  $('reloadDevices').disabled = true;
+  try {
+    renderDevices(await api('/api/admin/devices?t=' + Date.now()));
+  } catch (err) {
+    setStatus('加载设备失败：' + err.message, 'err');
+  } finally {
+    $('reloadDevices').disabled = false;
+  }
+}
+
 async function enter() {
   if (!(await loadState())) return;
   await loadConfig();
+  await loadDevices();
 }
 
 async function doSetup() {
@@ -375,7 +430,6 @@ async function saveSettings() {
     publicBaseUrl: $('publicBaseUrl').value,
     adminUser: $('adminUser').value,
     newPass: $('newPass').value,
-    rotateToken: $('rotateToken').dataset.armed === '1',
     updateRepo: $('updateRepo').value,
     updateApiBase: $('updateApiBase').value,
   };
@@ -386,9 +440,6 @@ async function saveSettings() {
       body: JSON.stringify(body),
     });
     $('newPass').value = '';
-    $('rotateToken').dataset.armed = '0';
-    $('rotateToken').textContent = '轮换';
-    if (data.appToken) $('appToken').value = data.appToken;
     if (data.restart) {
       setStatus('端口已改成 ' + data.port + '，服务正在重启。请用 http://服务器IP:' +
         data.port + '/admin 重新打开（口令不变）。', 'ok');
@@ -513,16 +564,11 @@ $('save').addEventListener('click', saveKeys);
 $('reload').addEventListener('click', enter);
 $('test').addEventListener('click', testTts);
 $('saveSettings').addEventListener('click', saveSettings);
+$('reloadDevices').addEventListener('click', loadDevices);
 $('restart').addEventListener('click', restartService);
 $('saveUpdate').addEventListener('click', saveUpdateSettings);
 $('checkUpdate').addEventListener('click', checkUpdate);
 $('applyUpdate').addEventListener('click', applyUpdate);
-$('rotateToken').addEventListener('click', () => {
-  const btn = $('rotateToken');
-  const armed = btn.dataset.armed === '1';
-  btn.dataset.armed = armed ? '0' : '1';
-  btn.textContent = armed ? '轮换' : '确认轮换?';
-});
 
 bindForm();
 enter().catch((err) => setStatus('加载失败：' + err.message, 'err'));

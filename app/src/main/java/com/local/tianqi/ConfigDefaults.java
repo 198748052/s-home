@@ -8,10 +8,8 @@ package com.local.tianqi;
  */
 public final class ConfigDefaults {
 
-    /** 云端取 Key 的地址，例如 https://tq.example.com/api/keys。留空则只用本地手填。 */
-    static final String KEYS_URL = "";
-    /** 与服务端 server.json 的 token 一致；留空表示服务端没开令牌校验。 */
-    static final String KEYS_TOKEN = "";
+    /** 云端取 Key 的地址。打开 App 会自动拉取，失败时继续用上次缓存的 Key。 */
+    static final String KEYS_URL = "http://home.topsygf.cn";
     /** 两次拉取之间的最短间隔；Key 缓存永不过期，这个只防止一次启动里重复请求。 */
     static final long KEYS_REFRESH_THROTTLE_MS = 60L * 1000L;
 

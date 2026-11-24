@@ -44,10 +44,8 @@
     <string name="cache_cleared">缓存已清除</string>
     <string name="settings_tip">无网络时：农历会按前一天缓存推算当天；天气会显示缓存，缓存跨天后自动隐藏逐小时预报。和风天气每日预报最多 10 天。</string>
     <string name="settings_config_title">云端 Key</string>
-    <string name="settings_config_url_hint">Key 接口地址，例如 https://你的域名/api/keys（只填域名也行）</string>
+    <string name="settings_config_url_hint">Key 接口地址，留空使用内置地址 http://home.topsygf.cn</string>
     <string name="settings_config_sync">立即同步配置</string>
-    <string name="config_token_label">访问令牌</string>
-    <string name="config_token_hint">管理页「服务设置」里的 App 访问令牌</string>
     <string name="settings_config_syncing">正在同步…</string>
     <string name="settings_config_override_hint">同步云端 Key 时会直接写进下面这几个输入框；云端没配的字段保留你手填的值。</string>
     <string name="keys_no_url">未配置云端地址，使用本地 Key</string>
@@ -56,7 +54,7 @@
     <string name="keys_unchanged">Key 无变化</string>
     <string name="keys_updated">Key 已更新到 v%1$d</string>
     <string name="keys_http_error">拉取 Key 失败（HTTP %1$d）</string>
-    <string name="keys_http_401">拉取失败（HTTP 401/403）：令牌不对，或反代挡了；请把管理页里的 App 访问令牌粘到上面的「配置令牌」</string>
+    <string name="keys_http_401">拉取失败（HTTP 401/403）：服务端或反向代理拒绝了请求，请检查地址和反代配置</string>
     <string name="keys_http_404">拉取失败（HTTP 404）：路径不对，应为 /api/keys；检查反代是否转发到这个路径</string>
     <string name="keys_failed">拉取 Key 失败：%1$s</string>
     <string name="keys_source_none">Key 来源：本地（还没同步过云端 Key）</string>

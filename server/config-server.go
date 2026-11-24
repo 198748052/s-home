@@ -2,8 +2,8 @@
 //
 // 设计目标：装完只要暴露一个端口，其余全在网页里配。
 //   - 首次打开 /admin：设置管理员口令
-//   - 之后 /admin：改 Key、换语音厂商、改端口、改对外域名、轮换 App 令牌、测试合成
-//   - App 用 GET /api/config + X-Config-Token 拉配置（ETag/304）
+//   - 之后 /admin：改 Key、换语音厂商、改端口、改对外域名、查看对接设备、测试合成
+//   - App 用 GET /api/keys 拉 Key（ETag/304），不需要令牌，只需上报设备信息
 //
 // 编译：go build -trimpath -ldflags "-s -w" -o tianqi-config .
 // 运行：./tianqi-config -config /root/data/tianqi/config.json -data /root/data/tianqi
@@ -64,7 +64,6 @@ type settings struct {
 	AdminUser     string `json:"adminUser"`
 	AdminSalt     string `json:"adminSalt"`
 	AdminHash     string `json:"adminHash"`
-	AppToken      string `json:"appToken"`
 	SessionSecret string `json:"sessionSecret"`
 	// UpdateRepo 是 GitHub 发布仓库（owner/repo）。留空表示不启用在线更新。
 	UpdateRepo string `json:"updateRepo"`
@@ -80,7 +79,6 @@ func defaultSettings(port int) *settings {
 	return &settings{
 		Port:          port,
 		AdminUser:     "admin",
-		AppToken:      randomHex(24),
 		SessionSecret: randomHex(32),
 		UpdateAPIBase: defaultUpdateAPIBase,
 	}
@@ -108,9 +106,6 @@ func loadSettings(path string, port int) (*settings, error) {
 	}
 	if s.AdminUser == "" {
 		s.AdminUser = "admin"
-	}
-	if s.AppToken == "" {
-		s.AppToken = randomHex(24)
 	}
 	if s.SessionSecret == "" {
 		s.SessionSecret = randomHex(32)
@@ -253,6 +248,8 @@ type app struct {
 	setupToken string
 	// restart 默认是「退出进程，让 systemd 拉起来」；测试里换成空实现
 	restart func()
+	// devices 记录对接过的设备，只用于管理页展示。
+	devices *deviceStore
 	// updateMu 保证同一时间只有一个更新流程，避免并发替换二进制。
 	updateMu sync.Mutex
 }
@@ -267,7 +264,8 @@ func newApp(configPath, dataDir, addrFlag string, port int) (*app, error) {
 		return nil, err
 	}
 	a := &app{configPath: configPath, dataDir: dataDir, addrFlag: addrFlag,
-		mu: make(chan struct{}, 1), cfg: s, setupToken: randomHex(16)}
+		mu: make(chan struct{}, 1), cfg: s, setupToken: randomHex(16),
+		devices: newDeviceStore(filepath.Join(dataDir, "devices.json"))}
 	a.restart = func() {
 		time.Sleep(300 * time.Millisecond)
 		os.Exit(0)
@@ -405,11 +403,8 @@ func (a *app) handleConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	token := a.settings().AppToken
-	if token != "" && r.Header.Get("X-Config-Token") != token {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid config token"})
-		return
-	}
+	// App 每次打开都会来拉一次 Key，顺手记录是哪台设备。
+	a.devices.touch(r)
 	raw, err := a.readConfig()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError,
@@ -442,11 +437,6 @@ func (a *app) handleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) handleHealth(w http.ResponseWriter, r *http.Request) {
-	token := a.settings().AppToken
-	if token != "" && r.Header.Get("X-Config-Token") != token {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid config token"})
-		return
-	}
 	raw, err := a.readConfig()
 	body := map[string]interface{}{
 		"ok": err == nil, "port": a.settings().Port, "serverVersion": version,
@@ -487,14 +477,31 @@ func (a *app) handleState(w http.ResponseWriter, r *http.Request) {
 		"serverVersion": version,
 	}
 	if loggedIn {
-		body["appToken"] = s.AppToken
 		body["updateRepo"] = s.UpdateRepo
 		body["updateApiBase"] = s.UpdateAPIBase
+		body["deviceCount"] = a.devices.count()
 		if s.PublicBaseURL != "" {
-			body["configUrl"] = strings.TrimRight(s.PublicBaseURL, "/") + "/api/config"
+			body["configUrl"] = strings.TrimRight(s.PublicBaseURL, "/") + "/api/keys"
 		}
 	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+// handleDevices 返回对接过的设备列表，按最近活跃排序。
+func (a *app) handleDevices(w http.ResponseWriter, r *http.Request) {
+	if !a.adminAuthorized(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "use GET"})
+		return
+	}
+	devices := a.devices.list()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"count":   len(devices),
+		"devices": devices,
+	})
 }
 
 // handleSetup 首次设置管理员口令；已设置过就拒绝。
@@ -595,7 +602,6 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 		PublicBaseURL string  `json:"publicBaseUrl"`
 		AdminUser     string  `json:"adminUser"`
 		NewPass       string  `json:"newPass"`
-		RotateToken   bool    `json:"rotateToken"`
 		UpdateRepo    *string `json:"updateRepo"`
 		UpdateAPIBase *string `json:"updateApiBase"`
 	}
@@ -629,7 +635,6 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oldPort := a.settings().Port
-	newToken := ""
 	err := a.updateSettings(func(s *settings) {
 		if req.Port != nil && *req.Port > 0 && *req.Port <= 65535 {
 			s.Port = *req.Port
@@ -641,10 +646,6 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if len(req.NewPass) > 0 {
 			s.AdminSalt = randomHex(16)
 			s.AdminHash = hashPassword(req.NewPass, s.AdminSalt)
-		}
-		if req.RotateToken {
-			s.AppToken = randomHex(24)
-			newToken = s.AppToken
 		}
 		if req.UpdateRepo != nil {
 			s.UpdateRepo = updateRepo
@@ -665,7 +666,6 @@ func (a *app) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok": true, "port": a.settings().Port, "restart": restart,
-		"appToken": newToken,
 	})
 	if restart {
 		go a.restart()
@@ -998,6 +998,7 @@ func main() {
 	mux.HandleFunc("/api/admin/login", svc.handleLogin)
 	mux.HandleFunc("/api/admin/logout", svc.handleLogout)
 	mux.HandleFunc("/api/admin/settings", svc.handleSettings)
+	mux.HandleFunc("/api/admin/devices", svc.handleDevices)
 	mux.HandleFunc("/api/admin/restart", svc.handleRestart)
 	mux.HandleFunc("/api/admin/update/check", svc.handleUpdateCheck)
 	mux.HandleFunc("/api/admin/update/apply", svc.handleUpdateApply)

@@ -37,7 +37,6 @@ public class SettingsActivity extends Activity {
     private EditText etCity;
     private EditText etMimoKey;
     private EditText etConfigUrl;
-    private EditText etConfigToken;
     private Spinner spMimoVoice;
     private Spinner spMimoSpeed;
     private TextView tvCacheInfo;
@@ -73,7 +72,6 @@ public class SettingsActivity extends Activity {
         etCity = findViewById(R.id.etCity);
         etMimoKey = findViewById(R.id.etMimoKey);
         etConfigUrl = findViewById(R.id.etConfigUrl);
-        etConfigToken = findViewById(R.id.etConfigToken);
         spMimoVoice = findViewById(R.id.spMimoVoice);
         spMimoSpeed = findViewById(R.id.spMimoSpeed);
         tvCacheInfo = findViewById(R.id.tvCacheInfo);
@@ -137,7 +135,6 @@ public class SettingsActivity extends Activity {
                         city);
                 settings.saveTtsKey(etMimoKey.getText().toString());
                 settings.setKeysUrl(etConfigUrl.getText().toString());
-                settings.setKeysToken(etConfigToken.getText().toString());
                 // 选的就是云端默认值时存空串，让这个用户继续跟随云端；改过才钉住
                 String voice = selectedVoice();
                 settings.setMimoVoice(voice.equals(settings.getMimoVoice()) ? "" : voice);
@@ -206,8 +203,8 @@ public class SettingsActivity extends Activity {
         etWeatherKey.setText(settings.getWeatherKey());
         etWeatherHost.setText(settings.getWeatherHost());
         etMimoKey.setText(settings.getTtsKey());
-        etConfigUrl.setText(settings.getKeysUrl());
-        etConfigToken.setText(settings.getLocalKeysToken());
+        // 没单独填过就显示内置地址，用户不用再手输
+        etConfigUrl.setText(settings.keysStore().url());
         setUpVoiceAndSpeed(settings.getMimoVoice(), settings.getMimoSpeed());
     }
 
@@ -248,7 +245,6 @@ public class SettingsActivity extends Activity {
     /** 立即拉一次云端 Key，结果写回界面。 */
     private void syncConfig() {
         settings.setKeysUrl(etConfigUrl.getText().toString());
-        settings.setKeysToken(etConfigToken.getText().toString());
         btnConfigSync.setEnabled(false);
         btnConfigSync.setText(R.string.settings_config_syncing);
         tvConfigInfo.setText(R.string.settings_config_syncing);

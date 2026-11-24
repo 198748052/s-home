@@ -12,8 +12,8 @@
 | 首页 | 农历大字（含节气/宜忌）、实时天气、逐小时预报、每日预报卡片、下拉刷新 |
 | 语音播报 | 点农历卡片念农历、点逐小时区域念今天、点每日预报念明天；小米 MiMo TTS，4 种音色、3 档语速；没填 Key 或合成失败自动退回系统 TTS 并 Toast 说明 |
 | 定位 | 系统定位取经纬度，失败回退上次定位位置；也支持城市名查询（仅限中国） |
-| 设置页 | 天气/万年历/语音 Key、云端 Key 地址与访问令牌、音色与语速、试听、接口自检 |
-| 云端 Key 下发 | `GET /api/keys` 带 ETag，无变化返回 304；60 秒节流，缓存永不过期，拉不到继续用旧值；手动同步强制回源 |
+| 设置页 | 天气/万年历/语音 Key、云端 Key 地址、音色与语速、试听、接口自检 |
+| 云端 Key 下发 | 每次打开 App 自动回源拉取一次；缓存永不过期，拉不到继续用上次的 Key；服务端按设备信息统计对接数量 |
 | 图标 | 和风天气官方图标字体（`qweather-icons.ttf`），随包内置 |
 
 ## 目录结构
@@ -31,12 +31,14 @@ s-home/
 │       │   ├── VoiceAnnouncer.java      合成 / 缓存 / 播放 / 系统语音兜底
 │       │   ├── KeysStore.java           云端 Key 拉取、缓存、ETag
 │       │   ├── CloudKeys.java           拉取结果模型
+│       │   ├── DeviceInfo.java          上报给服务端的设备 ID / 名称 / 版本
 │       │   ├── ConfigDefaults.java      写死的接口地址与协议参数
 │       │   └── ...                      定位、时间/文案拼接、图标映射、下拉刷新等
 │       ├── main/res/                    布局、颜色、字符串、图标字体
-│       └── test/java/com/local/tianqi/  Robolectric 单元测试（87 个）
+│       └── test/java/com/local/tianqi/  Robolectric 单元测试（97 个）
 ├── server/                       Go 云端 Key 服务（零第三方依赖）
 │   ├── config-server.go          HTTP 服务本体
+│   ├── devices.go                对接设备统计与持久化
 │   ├── admin.html                管理页（编译进二进制）
 │   ├── config.default.json       内置默认配置
 │   ├── install.sh.in             一键安装脚本模板
@@ -67,7 +69,7 @@ Key 可以在设置页手填，也可以由 `server/` 下发。
 # 编译 Debug APK
 ./gradlew assembleDebug
 
-# 跑单元测试（Robolectric，87 个用例）
+# 跑单元测试（Robolectric，97 个用例）
 ./gradlew testDebugUnitTest
 ```
 
@@ -77,13 +79,13 @@ Windows 下用 `gradlew.bat`。
 |---|---|
 | applicationId | `com.local.tianqi` |
 | minSdk / targetSdk / compileSdk | 24 / 34 / 34 |
-| versionCode / versionName | 25 / 3.2 |
+| versionCode / versionName | 27 / 3.4 |
 | Gradle / AGP | 8.7 / 8.5.2 |
 | 运行时第三方依赖 | 无（仅 JUnit + Robolectric 用于测试） |
 
 ## 云端 Key 服务
 
-服务端只做一件事：把 4 个 Key 发给 App。接口地址和字段解析写死在 App 的
+服务端只做一件事：把 4 个 Key 发给 App，并记录对接设备。接口地址和字段解析写死在 App 的
 `ConfigDefaults` / `WeatherService` / `LunarService` / `TtsClient` 里，服务端没有配置下发、
 没有字段映射、没有厂商适配。
 
@@ -106,11 +108,10 @@ go vet ./... && go test ./...
 默认从 `app/src/main/java/com/local/tianqi/ConfigDefaults.java` 读取：
 
 ```java
-static final String KEYS_URL = "";      // 例如 https://tq.example.com/api/keys
-static final String KEYS_TOKEN = "";    // 管理页里的 App 访问令牌
+static final String KEYS_URL = "http://home.topsygf.cn";  // 打开 App 自动拉取
 ```
 
-两项留空即只用本地手填的 Key；也可以在 App 设置页「云端 Key」里直接填，无需改代码。
+App 每次打开都会自动请求一次 `/api/keys`：拉取成功就写进本地 Key，失败就继续用上次缓存的 Key，不需要手动点击同步。请求会带上设备 ID、名称和 App 版本，服务端管理页可以看到有多少台设备对接过。
 
 ## 设计取舍
 

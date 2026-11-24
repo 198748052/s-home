@@ -56,18 +56,20 @@ sudo sh /tmp/install-amd64.sh
    - 点「测试语音合成」确认 Key 通不通
    - 改端口（改完服务自动重启，用新端口重开本页）
    - 填对外域名（页面会显示 App 要用的 Key 接口地址）
-   - 复制 / 轮换 App 访问令牌（App 里的「访问令牌」）
+   - 查看「设备管理」：有几台设备对接过、最近一次上报时间
    - 改管理员口令
 3. 点「保存配置」→ 服务端把 `version` 加一，App 下次同步就能感知
 
-## 4. App 侧填两个常量
+## 4. App 侧地址
 
 `app/src/main/java/com/local/tianqi/ConfigDefaults.java`：
 
 ```java
-static final String KEYS_URL = "http://服务器IP:8787/api/keys";   // 或你的域名
-static final String KEYS_TOKEN = "<网页里复制的 App 访问令牌>";
+static final String KEYS_URL = "http://home.topsygf.cn";
 ```
+
+App 每次打开会自动拉取一次；拉取失败时继续用上次缓存的 Key。服务端不再校验 App 令牌，
+打开 App 后会在「设备管理」里出现这台设备。
 
 ```powershell
 cd D:\develops\deepseek\home\s-home-main
@@ -140,11 +142,11 @@ server {
 | 要做什么 | 怎么做 |
 |---|---|
 | 换 Key / 换厂商 / 改音色语速 | 管理页改完点「保存配置」 |
-| 改端口 / 改域名 / 改口令 / 轮换令牌 | 管理页「服务设置」→ 保存 |
+| 改端口 / 改域名 / 改口令 | 管理页「服务设置」→ 保存 |
 | 立刻让 App 生效 | App 设置页点「立即同步配置」 |
 | 升级服务端 | 管理页「在线更新」检查并更新；或重跑 `sudo sh /tmp/install-amd64.sh`（配置和口令不动） |
 | 配置改坏了 | `/root/data/tianqi/config.json.bak` 是上一版 |
-| 忘了管理口令 | 停服务，删 `/root/data/tianqi/server.json` 里的 `adminHash` 和 `adminSalt` 两行，重启后重新设置（**会保留端口和令牌**；重新设置同样需要日志里的设置码） |
+| 忘了管理口令 | 停服务，删 `/root/data/tianqi/server.json` 里的 `adminHash` 和 `adminSalt` 两行，重启后重新设置（**会保留端口**；重新设置同样需要日志里的设置码） |
 | 看日志 | `sudo journalctl -u tianqi-config -f` |
 | 重启服务 | `sudo systemctl restart tianqi-config` |
 
@@ -158,7 +160,8 @@ server {
 |---|---|
 | `config.json` | 下发给 App 的配置（Key、厂商、音色…） |
 | `config.json.bak` | 上一版配置 |
-| `server.json` | 端口、对外域名、管理员口令哈希、App 令牌（权限 600） |
+| `server.json` | 端口、对外域名、管理员口令哈希（权限 600） |
+| `devices.json` | 对接设备列表（设备 ID、名称、版本、最近上报时间） |
 | `tianqi-config` | 二进制 |
 
 ---
@@ -173,7 +176,6 @@ server {
 | 打开 `/admin` 又要求设置口令 | `server.json` 里 `adminHash` 为空（删过或没设置成功），重新设置即可；这次同样要填启动日志里的设置码 |
 | 管理页一直转圈 / 加载失败 | 看 `journalctl -u tianqi-config -n 30`；多半是 `config.json` 不是合法 JSON |
 | 改端口后页面打不开 | 服务已用新端口重启，用 `http://IP:新端口/admin` 打开 |
-| App 拉 Key 401 | App 里的「访问令牌」与网页上的「App 访问令牌」不一致（轮换过令牌要在 App 设置页重新粘一次） |
 | 合成自检 401 | 语音厂商 Key 错，或 `tts.provider` 与接口不匹配 |
 | 合成自检 200 但没 audioBytes | `audioField` 路径不对（MiMo 用 `choices.0.message.audio.data`；OpenAI 兼容接口留空） |
 
@@ -185,5 +187,4 @@ server {
 - [ ] 口令够长；能用反代限 IP 就限 `/admin`
 - [ ] 上 HTTPS（反代里配证书），否则口令和 Key 在链路上是明文
 - [ ] `server.json` 权限 600（脚本已设）
-- [ ] App 令牌泄露过就在网页里「轮换」，然后重新打包 App
 - [ ] 给和风天气 / 语音厂商的 Key 开用量告警

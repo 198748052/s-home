@@ -24,9 +24,10 @@ public final class AppSettings {
     private static final String KEY_CITY = "city";
     private static final String DEFAULT_CITY = "北京";
 
-    /** 云端取 Key 的地址与令牌（留空则用编译进 App 的默认值）。 */
+    /** 云端取 Key 的地址（留空则用编译进 App 的默认值）。 */
     private static final String KEY_KEYS_URL = "keys_url";
-    private static final String KEY_KEYS_TOKEN = "keys_token";
+    /** 旧版本手填的地址只迁移一次，之后默认使用 App 内置地址。 */
+    static final String KEY_KEYS_URL_MIGRATED = "keys_url_migrated";
     /** 记录哪些本地值是由云端同步写入的（逗号分隔的 pref key）。 */
     private static final String KEY_SYNCED = "synced_from_cloud";
 
@@ -45,6 +46,23 @@ public final class AppSettings {
     public AppSettings(Context context) {
         this.context = context.getApplicationContext();
         preferences = this.context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        migrateLegacyKeysUrl();
+    }
+
+    /**
+     * 以前地址要手填，升级后默认用内置地址：把旧地址清掉一次，Key 都保留。
+     * 清过之后用户再手填的地址仍然有效。
+     */
+    private void migrateLegacyKeysUrl() {
+        if (preferences.getBoolean(KEY_KEYS_URL_MIGRATED, false)) {
+            return;
+        }
+        String saved = preferences.getString(KEY_KEYS_URL, "").trim();
+        String builtIn = KeysStore.normalizeUrl(ConfigDefaults.KEYS_URL);
+        if (!saved.isEmpty() && !KeysStore.normalizeUrl(saved).equals(builtIn)) {
+            preferences.edit().remove(KEY_KEYS_URL).apply();
+        }
+        preferences.edit().putBoolean(KEY_KEYS_URL_MIGRATED, true).apply();
     }
 
     public SharedPreferences preferences() {
@@ -127,21 +145,6 @@ public final class AppSettings {
 
     public void setKeysUrl(String url) {
         preferences.edit().putString(KEY_KEYS_URL, url == null ? "" : url.trim()).apply();
-    }
-
-    public String getKeysToken() {
-        String local = preferences.getString(KEY_KEYS_TOKEN, "").trim();
-        return local.isEmpty() ? ConfigDefaults.KEYS_TOKEN : local;
-    }
-
-    /** 本地粘的令牌（设置页回显用，空串表示跟随内置值）。 */
-    public String getLocalKeysToken() {
-        return preferences.getString(KEY_KEYS_TOKEN, "").trim();
-    }
-
-    public void setKeysToken(String token) {
-        preferences.edit().putString(KEY_KEYS_TOKEN,
-                token == null ? "" : token.trim()).apply();
     }
 
     // ---------- 云端 Key 落地 ----------
